@@ -14,3 +14,11 @@
 Thumbs.db
 *.db
 *.sqlite
+# Antigravity IDE files
+.antigravity-ide/
+
+# Puppeteer cache
+.cache/
+
+# Bash history
+.bash_history

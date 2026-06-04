@@ -1,0 +1,111 @@
+// Prisma Schema for Abeddy's AI Assistant
+// Using PostgreSQL (NeonDB) as the datasource
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────
+
+enum Platform {
+  WHATSAPP
+  INSTAGRAM
+}
+
+enum Mood {
+  CASUAL
+  FORMAL
+  BUSY
+  FRIENDLY
+  PROFESSIONAL
+}
+
+enum Direction {
+  INBOUND
+  OUTBOUND
+}
+
+// ─── Models ──────────────────────────────────────────────
+
+model Contact {
+  id              String      @id @default(cuid())
+  phoneOrUsername  String
+  platform        Platform
+  personaId       String?
+  createdAt       DateTime    @default(now())
+
+  persona         Persona?    @relation(fields: [personaId], references: [id])
+  messages        Message[]
+  autoReplies     AutoReply[]
+
+  @@index([phoneOrUsername, platform])
+}
+
+model Persona {
+  id              String      @id @default(cuid())
+  name            String
+  mood            Mood
+  tone            String
+  examplePhrases  String[]
+  createdAt       DateTime    @default(now())
+
+  contacts        Contact[]
+  rules           Rule[]
+}
+
+model Message {
+  id              String      @id @default(cuid())
+  contactId       String
+  direction       Direction
+  content         String
+  platform        Platform
+  createdAt       DateTime    @default(now())
+
+  contact         Contact     @relation(fields: [contactId], references: [id])
+  autoReply       AutoReply?
+
+  @@index([contactId])
+  @@index([createdAt])
+}
+
+model AutoReply {
+  id              String      @id @default(cuid())
+  messageId       String      @unique
+  contactId       String
+  generatedReply  String
+  wasSent         Boolean     @default(false)
+  createdAt       DateTime    @default(now())
+
+  message         Message     @relation(fields: [messageId], references: [id])
+  contact         Contact     @relation(fields: [contactId], references: [id])
+
+  @@index([contactId])
+}
+
+model Rule {
+  id              String      @id @default(cuid())
+  keyword         String
+  response        String
+  personaId       String?
+  priority        Int         @default(0)
+  isActive        Boolean     @default(true)
+
+  persona         Persona?    @relation(fields: [personaId], references: [id])
+
+  @@index([keyword])
+}
+
+model Settings {
+  id              Int         @id @default(1)
+  killSwitch      Boolean     @default(false)
+  blackoutStart   String      @default("01:00")
+  blackoutEnd     String      @default("06:00")
+  dailyReplyLimit Int         @default(10)
+  minDelaySeconds Int         @default(3)
+  maxDelaySeconds Int         @default(15)
+}
