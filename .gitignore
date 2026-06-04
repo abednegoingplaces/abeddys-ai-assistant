@@ -1,0 +1,16 @@
+﻿node_modules/
+**/node_modules/
+.env
+**/.env
+*.env.local
+**/sessions/
+**/.wwebjs_auth/
+**/.wwebjs_cache/
+**/dist/
+**/.next/
+*.log
+**/logs/
+.DS_Store
+Thumbs.db
+*.db
+*.sqlite
