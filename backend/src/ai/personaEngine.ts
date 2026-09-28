@@ -1,8 +1,4 @@
-import Anthropic from "@anthropic-ai/sdk";
-
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -257,24 +253,21 @@ export async function generateReply(
   ];
 
   try {
-    const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 256,
-      system: systemPrompt,
-      messages,
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+    const model = genAI.getGenerativeModel({
+      model: "gemini-1.5-flash",
+      systemInstruction: systemPrompt,
     });
 
-    // Extract text from response
-    const textBlock = response.content.find((block) => block.type === "text");
-    if (!textBlock || textBlock.type !== "text") {
-      return {
-        reply: null,
-        shouldFlag: true,
-        reason: "AI returned no text content",
-      };
-    }
+    const chat = model.startChat({
+      history: messages.slice(0, -1).map((m) => ({
+        role: m.role === "assistant" ? "model" : "user",
+        parts: [{ text: m.content }],
+      })),
+    });
 
-    const rawOutput = textBlock.text.trim();
+    const result = await chat.sendMessage(incomingMessage);
+    const rawOutput = result.response.text().trim();
 
     // Parse the JSON response
     let parsed: { reply: string | null; shouldFlag: boolean; reason?: string };
@@ -295,7 +288,7 @@ export async function generateReply(
       reason: parsed.reason,
     };
   } catch (error) {
-    console.error("❌ Anthropic API error:", error);
+    console.error("❌ Gemini API error:", error);
     return {
       reply: null,
       shouldFlag: true,

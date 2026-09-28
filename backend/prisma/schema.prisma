@@ -30,16 +30,32 @@ enum Direction {
   OUTBOUND
 }
 
+enum Group {
+  FRIENDS
+  FAMILY
+  COLLEAGUES
+  CLIENT
+  UNKNOWN
+}
+
+enum Mode {
+  IMPERSONATOR
+  TUTOR
+}
+
 // ─── Models ──────────────────────────────────────────────
 
 model Contact {
-  id              String      @id @default(cuid())
+  id              String        @id @default(cuid())
   phoneOrUsername  String
   platform        Platform
+  group           Group         @default(UNKNOWN)
+  mode            Mode          @default(IMPERSONATOR)
+  displayName     String?
   personaId       String?
-  createdAt       DateTime    @default(now())
+  createdAt       DateTime      @default(now())
 
-  persona         Persona?    @relation(fields: [personaId], references: [id])
+  persona         Persona?      @relation(fields: [personaId], references: [id])
   messages        Message[]
   autoReplies     AutoReply[]
 
