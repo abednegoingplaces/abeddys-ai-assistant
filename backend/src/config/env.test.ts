@@ -41,6 +41,7 @@ describe("Environment Configuration Schema", () => {
     const validRaw = {
       DATABASE_URL: "postgresql://postgres:password@localhost:5432/abeddy_assistant",
       NODE_ENV: "production",
+      ADMIN_TOKEN: "a".repeat(32),
     };
     expect(validateEnv(validRaw).NODE_ENV).toBe("production");
 
@@ -49,6 +50,33 @@ describe("Environment Configuration Schema", () => {
       NODE_ENV: "invalid-env",
     };
     expect(() => validateEnv(invalidRaw)).toThrowError();
+  });
+
+  it("should default model IDs and timezone", () => {
+    const parsed = validateEnv({ DATABASE_URL: "postgresql://x@localhost/db" });
+    expect(parsed.PERSONA_MODEL).toBe("claude-opus-5-5");
+    expect(parsed.TUTOR_MODEL).toBe("claude-opus-5-5");
+    expect(parsed.GEMINI_MODEL).toBe("gemini-3.8-flash");
+    expect(parsed.TZ).toBe("Africa/Nairobi");
+  });
+
+  it("should require ADMIN_TOKEN in production", () => {
+    expect(() =>
+      validateEnv({ DATABASE_URL: "postgresql://x@localhost/db", NODE_ENV: "production" })
+    ).toThrowError(/ADMIN_TOKEN/);
+    expect(
+      validateEnv({
+        DATABASE_URL: "postgresql://x@localhost/db",
+        NODE_ENV: "production",
+        ADMIN_TOKEN: "a".repeat(32),
+      }).ADMIN_TOKEN
+    ).toBe("a".repeat(32));
+  });
+
+  it("should reject a short ADMIN_TOKEN", () => {
+    expect(() =>
+      validateEnv({ DATABASE_URL: "postgresql://x@localhost/db", ADMIN_TOKEN: "short" })
+    ).toThrowError(/ADMIN_TOKEN/);
   });
 
   it("should capture API keys when provided", () => {
