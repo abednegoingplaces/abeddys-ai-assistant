@@ -1,7 +1,6 @@
 import express from "express";
 import cors from "cors";
 import QRCode from "qrcode";
-import type { Request, Response, NextFunction } from "express";
 import {
   initWhatsApp,
   shutdownWhatsApp,
@@ -10,7 +9,7 @@ import {
 } from "./whatsapp/whatsappClient";
 import prisma from "./lib/prisma";
 import redis from "./lib/redis";
-import { isValidAdminToken } from "./lib/auth";
+import { createRequireAdmin } from "./lib/auth";
 
 import { env } from "./config/env";
 
@@ -23,25 +22,7 @@ const PORT = env.PORT;
 app.use(cors({ origin: env.DASHBOARD_ORIGIN ?? false }));
 app.use(express.json());
 
-/**
- * Guards admin-only routes. Accepts `Authorization: Bearer <token>` or `?token=`.
- * In development with no ADMIN_TOKEN set, access is allowed (with a warning) so
- * local QR linking still works; production requires the token (enforced by env schema).
- */
-function requireAdmin(req: Request, res: Response, next: NextFunction): void {
-  if (!env.ADMIN_TOKEN && env.NODE_ENV === "development") {
-    next();
-    return;
-  }
-  const header = req.header("authorization");
-  const bearer = header?.startsWith("Bearer ") ? header.slice(7) : undefined;
-  const query = typeof req.query.token === "string" ? req.query.token : undefined;
-  if (isValidAdminToken(bearer ?? query, env.ADMIN_TOKEN)) {
-    next();
-    return;
-  }
-  res.status(401).json({ error: "Unauthorized" });
-}
+const requireAdmin = createRequireAdmin({ adminToken: env.ADMIN_TOKEN, nodeEnv: env.NODE_ENV });
 
 // ─── Helpers ─────────────────────────────────────────────
 
