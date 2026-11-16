@@ -22,3 +22,6 @@ Thumbs.db
 
 # Bash history
 .bash_history
+
+# Local untracked project directories
+BridgePay-Backend/

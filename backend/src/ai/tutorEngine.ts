@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { env } from "../config/env";
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -38,8 +39,8 @@ export async function generateTutorReply(
 ): Promise<GenerateTutorReplyResult> {
   const { incomingMessage, conversationHistory } = params;
 
-  const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
-  const geminiApiKey = process.env.GEMINI_API_KEY;
+  const anthropicApiKey = env.ANTHROPIC_API_KEY;
+  const geminiApiKey = env.GEMINI_API_KEY;
 
   // 1. Try Anthropic (Claude) if API key is provided
   if (anthropicApiKey) {
