@@ -79,6 +79,26 @@ describe("Environment Configuration Schema", () => {
     ).toThrowError(/ADMIN_TOKEN/);
   });
 
+  it("should treat empty strings from a copied .env.example as unset", () => {
+    const parsed = validateEnv({
+      DATABASE_URL: "postgresql://x@localhost/db",
+      ADMIN_TOKEN: "",
+      DASHBOARD_ORIGIN: "",
+      OWNER_WID: "",
+      GEMINI_API_KEY: "",
+    });
+    expect(parsed.ADMIN_TOKEN).toBeUndefined();
+    expect(parsed.DASHBOARD_ORIGIN).toBeUndefined();
+    expect(parsed.OWNER_WID).toBeUndefined();
+    expect(parsed.GEMINI_API_KEY).toBeUndefined();
+  });
+
+  it("should still require ADMIN_TOKEN in production when it is an empty string", () => {
+    expect(() =>
+      validateEnv({ DATABASE_URL: "postgresql://x@localhost/db", NODE_ENV: "production", ADMIN_TOKEN: "" })
+    ).toThrowError(/ADMIN_TOKEN is required/);
+  });
+
   it("should capture API keys when provided", () => {
     const raw = {
       DATABASE_URL: "postgresql://postgres:password@localhost:5432/abeddy_assistant",
