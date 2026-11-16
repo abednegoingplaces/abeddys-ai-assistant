@@ -1,14 +1,13 @@
 import express from "express";
 import cors from "cors";
-import dotenv from "dotenv";
 import QRCode from "qrcode";
 import { initWhatsApp, latestQr, whatsappReady } from "./whatsapp/whatsappClient";
 import prisma from "./lib/prisma";
 
-dotenv.config();
+import { env } from "./config/env";
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = env.PORT;
 
 // ─── Middleware ──────────────────────────────────────────
 

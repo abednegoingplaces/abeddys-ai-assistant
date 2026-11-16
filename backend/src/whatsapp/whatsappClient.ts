@@ -5,6 +5,7 @@ import { generateTutorReply } from "../ai/tutorEngine";
 import { checkShouldReply } from "../safety/safetyEngine";
 import prisma from "../lib/prisma";
 import { incrementReplyCount } from "../lib/redis";
+import { env } from "../config/env";
 
 // ─── Client Setup ────────────────────────────────────────
 
@@ -44,7 +45,7 @@ client.on("qr", (qr) => {
   latestQr = qr;
   console.log("📱 Scan this QR code to connect WhatsApp:\n");
   qrcode.generate(qr, { small: true });
-  console.log(`🌐 Or visit http://localhost:${process.env.PORT || 3001}/api/qr`);
+  console.log(`🌐 Or visit http://localhost:${env.PORT}/api/qr`);
 });
 
 client.on("ready", () => {
