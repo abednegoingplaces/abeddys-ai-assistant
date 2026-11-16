@@ -13,6 +13,28 @@ export const envSchema = z.object({
   NODE_ENV: z
     .enum(["development", "production", "test"])
     .default("development"),
+
+  // Model IDs live in env so a retirement is a config change, not a code change.
+  PERSONA_MODEL: z.string().min(1).default("claude-opus-5-5"),
+  TUTOR_MODEL: z.string().min(1).default("claude-opus-5-5"),
+  GEMINI_MODEL: z.string().min(1).default("gemini-3.8-flash"),
+
+  // Protects /api/qr (and later /api/admin). Required outside development.
+  ADMIN_TOKEN: z.string().min(24, "ADMIN_TOKEN must be at least 24 characters").optional(),
+  // Allowed browser origin for the dashboard; CORS is closed when unset.
+  DASHBOARD_ORIGIN: z.string().url().optional(),
+  // Owner's own WhatsApp id (e.g. 2547XXXXXXXX@c.us) for escalations.
+  OWNER_WID: z.string().optional(),
+  // Timezone used for blackout hours and daily limit resets.
+  TZ: z.string().default("Africa/Nairobi"),
+}).superRefine((val, ctx) => {
+  if (val.NODE_ENV === "production" && !val.ADMIN_TOKEN) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["ADMIN_TOKEN"],
+      message: "ADMIN_TOKEN is required in production",
+    });
+  }
 });
 
 export type Env = z.infer<typeof envSchema>;

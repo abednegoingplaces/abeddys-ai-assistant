@@ -6,6 +6,7 @@ import { checkShouldReply } from "../safety/safetyEngine";
 import prisma from "../lib/prisma";
 import { incrementReplyCount } from "../lib/redis";
 import { env } from "../config/env";
+import { shouldIgnoreChat } from "./filters";
 
 // ─── Client Setup ────────────────────────────────────────
 
@@ -58,13 +59,28 @@ client.on("auth_failure", (msg) => {
   console.error("❌ WhatsApp auth failure:", msg);
 });
 
-client.on("disconnected", (reason) => {
+let shuttingDown = false;
+let reconnecting = false;
+
+client.on("disconnected", async (reason) => {
+  whatsappReady = false;
   console.warn("⚠️ WhatsApp disconnected:", reason);
+  if (shuttingDown || reconnecting) return;
+  reconnecting = true;
   console.log("🔄 Attempting reconnect in 5 seconds...");
+  // Tear down the old browser before re-initializing to avoid orphaned Chromium processes.
+  try {
+    await client.destroy();
+  } catch (err) {
+    console.warn("Could not destroy client cleanly:", err);
+  }
   setTimeout(() => {
-    client.initialize().catch((err) => {
-      console.error("❌ Reinitialization error:", err);
-    });
+    client
+      .initialize()
+      .catch((err) => console.error("❌ Reinitialization error:", err))
+      .finally(() => {
+        reconnecting = false;
+      });
   }, 5000);
 });
 
@@ -72,8 +88,8 @@ client.on("disconnected", (reason) => {
 
 client.on("message", async (msg: Message) => {
   try {
-    // Ignore group messages
-    if (msg.from.includes("@g.us")) return;
+    // Ignore group messages and status/broadcast updates
+    if (shouldIgnoreChat(msg.from)) return;
 
     // Ignore self messages
     if (msg.fromMe) return;
@@ -305,4 +321,10 @@ client.on("message", async (msg: Message) => {
 export async function initWhatsApp(): Promise<void> {
   console.log("🔄 Initializing WhatsApp client...");
   await client.initialize();
+}
+
+export async function shutdownWhatsApp(): Promise<void> {
+  shuttingDown = true;
+  whatsappReady = false;
+  await client.destroy();
 }

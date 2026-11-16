@@ -58,7 +58,7 @@ export async function generateTutorReply(
       });
 
       const response = await anthropic.messages.create({
-        model: "claude-3-5-sonnet-20241022",
+        model: env.TUTOR_MODEL,
         max_tokens: 1024,
         system: TUTOR_SYSTEM_PROMPT,
         messages,
@@ -81,7 +81,7 @@ export async function generateTutorReply(
     try {
       const genAI = new GoogleGenerativeAI(geminiApiKey);
       const model = genAI.getGenerativeModel({
-        model: "gemini-1.5-flash",
+        model: env.GEMINI_MODEL,
         systemInstruction: TUTOR_SYSTEM_PROMPT,
       });
 

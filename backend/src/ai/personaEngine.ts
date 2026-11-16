@@ -256,7 +256,7 @@ export async function generateReply(
   try {
     const genAI = new GoogleGenerativeAI(env.GEMINI_API_KEY || "");
     const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
+      model: env.GEMINI_MODEL,
       systemInstruction: systemPrompt,
     });
 

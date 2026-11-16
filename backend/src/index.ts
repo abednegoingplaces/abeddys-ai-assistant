@@ -1,8 +1,16 @@
 import express from "express";
 import cors from "cors";
 import QRCode from "qrcode";
-import { initWhatsApp, latestQr, whatsappReady } from "./whatsapp/whatsappClient";
+import type { Request, Response, NextFunction } from "express";
+import {
+  initWhatsApp,
+  shutdownWhatsApp,
+  latestQr,
+  whatsappReady,
+} from "./whatsapp/whatsappClient";
 import prisma from "./lib/prisma";
+import redis from "./lib/redis";
+import { isValidAdminToken } from "./lib/auth";
 
 import { env } from "./config/env";
 
@@ -11,8 +19,29 @@ const PORT = env.PORT;
 
 // ─── Middleware ──────────────────────────────────────────
 
-app.use(cors());
+// CORS is closed unless a dashboard origin is configured.
+app.use(cors({ origin: env.DASHBOARD_ORIGIN ?? false }));
 app.use(express.json());
+
+/**
+ * Guards admin-only routes. Accepts `Authorization: Bearer <token>` or `?token=`.
+ * In development with no ADMIN_TOKEN set, access is allowed (with a warning) so
+ * local QR linking still works; production requires the token (enforced by env schema).
+ */
+function requireAdmin(req: Request, res: Response, next: NextFunction): void {
+  if (!env.ADMIN_TOKEN && env.NODE_ENV === "development") {
+    next();
+    return;
+  }
+  const header = req.header("authorization");
+  const bearer = header?.startsWith("Bearer ") ? header.slice(7) : undefined;
+  const query = typeof req.query.token === "string" ? req.query.token : undefined;
+  if (isValidAdminToken(bearer ?? query, env.ADMIN_TOKEN)) {
+    next();
+    return;
+  }
+  res.status(401).json({ error: "Unauthorized" });
+}
 
 // ─── Helpers ─────────────────────────────────────────────
 
@@ -46,39 +75,17 @@ app.get("/health", (_req, res) => {
   });
 });
 
-app.get("/api/status", (_req, res) => {
+app.get("/api/status", requireAdmin, (_req, res) => {
   res.status(200).json({
     whatsapp: whatsappReady ? "connected" : "disconnected",
     uptime: process.uptime(),
   });
 });
 
-app.get("/api/qr", async (_req, res) => {
+app.get("/api/qr", requireAdmin, async (_req, res) => {
+  // Once linked, the QR endpoint disappears so it can't be used to link another device.
   if (whatsappReady) {
-    res.status(200).send(`
-      <!DOCTYPE html>
-      <html lang="en">
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>WhatsApp — Connected</title>
-        <style>
-          body { font-family: 'Segoe UI', sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; background: #0a0a0a; color: #fff; }
-          .card { text-align: center; padding: 40px; border-radius: 16px; background: #1a1a2e; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
-          .status { font-size: 48px; margin-bottom: 16px; }
-          h2 { color: #25D366; margin: 0; }
-          p { color: #888; margin-top: 8px; }
-        </style>
-      </head>
-      <body>
-        <div class="card">
-          <div class="status">✅</div>
-          <h2>WhatsApp Connected</h2>
-          <p>Session is active. No QR code needed.</p>
-        </div>
-      </body>
-      </html>
-    `);
+    res.status(404).json({ error: "Not found" });
     return;
   }
 
@@ -175,8 +182,18 @@ async function gracefulShutdown(signal: string) {
     console.log("📴 HTTP server closed");
   });
 
+  try {
+    await shutdownWhatsApp();
+    console.log("📱 WhatsApp client destroyed");
+  } catch (err) {
+    console.error("⚠️ Error destroying WhatsApp client:", err);
+  }
+
   await prisma.$disconnect();
   console.log("🗄️ Prisma disconnected");
+
+  await redis.quit().catch(() => redis.disconnect());
+  console.log("🧠 Redis disconnected");
 
   process.exit(0);
 }
