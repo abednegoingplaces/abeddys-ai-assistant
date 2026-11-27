@@ -23,6 +23,13 @@ describe("isQuotaOrOverload", () => {
     expect(isQuotaOrOverload(new Error("... [503 Service Unavailable] high demand"))).toBe(true);
   });
 
+  it("treats timeouts and dropped connections as a reason to try the next model", () => {
+    expect(isQuotaOrOverload({ name: "AbortError" })).toBe(true);
+    expect(isQuotaOrOverload(new Error("Request aborted due to timeout"))).toBe(true);
+    expect(isQuotaOrOverload(new Error("TypeError: fetch failed"))).toBe(true);
+    expect(isQuotaOrOverload(new Error("read ECONNRESET"))).toBe(true);
+  });
+
   it("does not retry other errors (bad key, bad request)", () => {
     expect(isQuotaOrOverload({ status: 400 })).toBe(false);
     expect(isQuotaOrOverload(new Error("[400 Bad Request] API key not valid"))).toBe(false);
