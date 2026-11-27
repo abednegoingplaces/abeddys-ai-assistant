@@ -123,3 +123,38 @@ export async function voiceTaskForNeo(audio: InboundMedia): Promise<string | nul
     return null;
   }
 }
+
+/**
+ * Neo answering someone else who is chatting with Abeddy. Question-answering only:
+ * no tools, no memory, and strict privacy about Abeddy.
+ */
+export async function askPublicNeo(question: string, askerName: string, media?: InboundMedia): Promise<string> {
+  if (!env.GEMINI_API_KEY) return "I'm not available right now.";
+  const genAI = new GoogleGenerativeAI(env.GEMINI_API_KEY);
+  const nick = env.OWNER_NICKNAME;
+  const today = new Intl.DateTimeFormat("en-GB", { timeZone: env.TZ, dateStyle: "full", timeStyle: "short" }).format(new Date());
+  const system = `
+You are Neo, the AI assistant of ${env.OWNER_NAME} (${nick}). Right now you're answering ${askerName},
+someone who is chatting with ${nick} on WhatsApp and asked you a question. It is ${today} (${env.TZ}).
+
+- Be helpful, accurate and friendly. If you're not sure, say so; never make things up.
+- Reply in the language they used (English, Kiswahili or Sheng). Keep it short unless they ask for detail.
+- WhatsApp formatting only: *bold*, _italic_, "-" lists. No markdown headings or tables.
+- PRIVACY: you have no access to ${nick}'s messages, contacts, location, schedule or money, and you never
+  guess about them. If asked about ${nick}'s personal matters, plans or decisions, say they should ask ${nick} directly.
+- Never make promises or commitments on ${nick}'s behalf.
+- Refuse anything harmful or illegal, briefly and politely.
+`.trim();
+
+  try {
+    const answer = await withGeminiFallback(async (modelName) => {
+      const model = genAI.getGenerativeModel({ model: modelName, systemInstruction: system }, GEMINI_REQUEST_OPTIONS);
+      const result = await model.generateContent(messageParts(question || "Hi", media));
+      return result.response.text().trim();
+    });
+    return answer || "Sorry, I don't have an answer for that.";
+  } catch (error) {
+    console.error("❌ Public Neo error:", error);
+    return "Sorry, I can't answer right now. Please try again a bit later.";
+  }
+}
