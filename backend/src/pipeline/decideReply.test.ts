@@ -94,21 +94,27 @@ describe("decideReply — AI engines", () => {
     expect(d.generatePersonaReply).not.toHaveBeenCalled();
   });
 
-  it("escalates with the draft when the AI flags but still suggests a reply", async () => {
+  it("answers what it safely can AND alerts Abeddy when the AI flags with a reply", async () => {
     const d = deps({
-      generatePersonaReply: vi.fn(async () => ({ reply: "wazii", shouldFlag: true, reason: "Meetup request" })),
+      generatePersonaReply: vi.fn(async () => ({ reply: "wazii, nitakuconfirm", shouldFlag: true, reason: "Meetup request" })),
     });
     expect(await decideReply(msg({ content: "tukutane kesho?" }), d)).toEqual({
-      kind: "ESCALATED",
-      reason: "Meetup request",
-      draft: "wazii",
+      kind: "AI",
+      reply: "wazii, nitakuconfirm",
+      engine: "PERSONA",
+      alert: "Meetup request",
     });
+  });
+
+  it("stays silent and alerts when the AI flags with no safe reply", async () => {
+    const d = deps({ generatePersonaReply: vi.fn(async () => ({ reply: null, shouldFlag: true, reason: "Aggressive message" })) });
+    expect(await decideReply(msg({ content: "wewe ni mjinga" }), d)).toEqual({ kind: "ESCALATED", reason: "Aggressive message", draft: null });
   });
 
   it("never sends an empty AI reply", async () => {
     const d = deps({ generateTutorReply: vi.fn(async () => ({ reply: "   ", shouldFlag: false })) });
     const r = await decideReply(msg({ mode: "TUTOR" }), d);
-    expect(r).toEqual({ kind: "ESCALATED", reason: "AI returned an empty reply", draft: null });
+    expect(r).toEqual({ kind: "ESCALATED", reason: "The bot couldn't work out a reply", draft: null });
   });
 });
 
@@ -141,20 +147,23 @@ describe("findMatchingRule", () => {
 });
 
 describe("formatEscalationNotice", () => {
-  it("includes contact, reason, message and draft", () => {
-    const text = formatEscalationNotice({ contactName: "Kevo", reason: "Money request", content: "niwai 500", draft: null });
-    expect(text).toContain("Kevo");
+  it("says when the bot stayed silent (message left on delivered)", () => {
+    const text = formatEscalationNotice({ contactName: "Kevo", reason: "Money request", content: "niwai 500" });
+    expect(text).toContain("Needs your reply — Kevo");
     expect(text).toContain("Money request");
-    expect(text).toContain('"niwai 500"');
-    expect(text).not.toContain("Suggested reply");
-    expect(formatEscalationNotice({ contactName: "K", reason: "r", content: "m", draft: "wazii" })).toContain(
-      "Suggested reply: wazii"
-    );
+    expect(text).toContain('They said: "niwai 500"');
+    expect(text).toContain("Bot did not reply (it still shows as delivered).");
+  });
+
+  it("says what the bot replied when it answered", () => {
+    const text = formatEscalationNotice({ contactName: "K", reason: "Meetup request", content: "tukutane kesho?", replied: "wazii, nitakuconfirm" });
+    expect(text).toContain("Check this chat — K");
+    expect(text).toContain('Bot replied: "wazii, nitakuconfirm"');
   });
 
   it("truncates very long messages", () => {
-    const text = formatEscalationNotice({ contactName: "K", reason: "r", content: "a".repeat(800), draft: null });
-    expect(text.length).toBeLessThan(600);
+    const text = formatEscalationNotice({ contactName: "K", reason: "r", content: "a".repeat(800) });
+    expect(text.length).toBeLessThan(700);
     expect(text).toContain("…");
   });
 });

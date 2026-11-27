@@ -21,7 +21,7 @@ export interface SafetyCheckResult {
 }
 
 /** Which escalation rule fired. */
-export type EscalationCode = "GROUP" | "LONG_MESSAGE" | "MONEY" | "LOCATION";
+export type EscalationCode = "GROUP" | "MONEY" | "LOCATION";
 
 /** Tier 3 (escalation): does a human need to see this first? */
 export interface EscalationCheckResult {

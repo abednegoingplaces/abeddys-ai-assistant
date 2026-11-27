@@ -35,7 +35,7 @@ Instagram DM ------+     (save to DB)                   +--> ESCALATED : stay si
 
 1. **Safety gate** (`safety/`). This runs first, for every message.
    - **Block silently:** the kill switch is on, it's blackout hours (default 01:00-06:00 Nairobi time), the daily reply limit is reached, the message contains a link, or it's a single character or emoji.
-   - **Escalate to Abeddy:** money requests (unless someone is *sending* money) and location questions. In Impersonator mode, also **Client** contacts and messages over 50 words.
+   - **Hold for Abeddy (no reply, alert sent):** money requests (unless someone is *sending* money), location questions, and **Client** contacts in Impersonator mode.
    - **Fails closed:** if the database is down, the bot stays silent.
 2. **Keyword rules.** Fixed replies you define in the `Rule` table.
 3. **AI reply** (`ai/`), depending on the contact's mode:
@@ -48,9 +48,15 @@ Instagram DM ------+     (save to DB)                   +--> ESCALATED : stay si
 - If the media needs Abeddy (a money request, a document, work), it's held for him like any other message.
 - Files over 14 MB are answered from the caption only. Documents and PDFs are ignored.
 
-**Escalated messages:**
-- They are logged and never answered.
-- If `OWNER_WID` is set, you also get a WhatsApp alert with the sender, the reason, the text and any suggested reply.
+**When something needs you** (alerts go to your WhatsApp **"Message yourself"** chat):
+
+| Message | What the bot does | Alert? |
+| --- | --- | --- |
+| Normal chat, greetings, memes, voice notes | Replies | No |
+| Needs your decision (meetup, favour, work), long or serious messages | Replies what it safely can ("wazii, nitakuconfirm") | Yes: what they said plus what the bot replied |
+| Money requests, location questions, `CLIENT` contacts, rude messages, or anything it can't answer | **Says nothing.** The message stays "delivered" (grey ticks), not read | Yes |
+
+Alerts go to your own number automatically. Set `OWNER_WID` only if you want them sent to a different number.
 
 > **New chats get replies too.** New contacts start as `UNKNOWN` and get a polite, neutral tone (no nicknames). Give someone a group (Friends, Family or Colleagues) for your usual style, or `CLIENT` to keep the bot out of that chat. See [Managing contacts](#managing-contacts).
 
@@ -151,7 +157,7 @@ Open `.env` in any editor and fill in:
 | `DATABASE_URL` | Leave the default for Docker, or paste your Neon connection string |
 | `GEMINI_API_KEY` | Your Gemini key (needed for Impersonator mode) |
 | `ANTHROPIC_API_KEY` | Your Anthropic key (Tutor mode; it falls back to Gemini if this is empty) |
-| `OWNER_WID` | Optional. Your own number as `2547XXXXXXXX@c.us` to receive escalation alerts |
+| `OWNER_WID` | Optional. Alerts go to your own "Message yourself" chat by default; set this (e.g. `2547XXXXXXXX@c.us`) only to send them elsewhere |
 | `ADMIN_TOKEN` | Optional locally, **required in production**. At least 24 random characters |
 
 To generate a strong `ADMIN_TOKEN`:

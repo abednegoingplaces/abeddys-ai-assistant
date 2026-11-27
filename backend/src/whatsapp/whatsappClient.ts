@@ -102,11 +102,18 @@ client.on("disconnected", async (reason) => {
 
 // ─── Message Handler ─────────────────────────────────────
 
-/** Sends an escalation heads-up to Abeddy's own WhatsApp (OWNER_WID). Used by every channel. */
+/**
+ * Sends an alert to Abeddy's own "Message yourself" chat (or OWNER_WID if set).
+ * Used by every channel. The bot ignores its own messages, so alerts never trigger replies.
+ */
 export async function notifyOwner(text: string): Promise<void> {
-  if (!env.OWNER_WID || !whatsappReady) return;
+  const target = env.OWNER_WID || client.info?.wid?._serialized;
+  if (!target || !whatsappReady) {
+    console.warn("⚠️ Could not alert Abeddy: WhatsApp isn't connected yet");
+    return;
+  }
   try {
-    await client.sendMessage(env.OWNER_WID, text);
+    await client.sendMessage(target, text);
   } catch (err) {
     console.warn("Could not notify owner of escalation:", err);
   }

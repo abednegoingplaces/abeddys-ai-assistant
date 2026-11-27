@@ -105,7 +105,6 @@ export async function handleInbound(input: InboundInput, channel: Channel): Prom
         contactName: platform === "INSTAGRAM" ? `${contactName} (Instagram)` : contactName,
         reason: decision.reason,
         content,
-        draft: decision.draft,
       })
     );
     return decision;
@@ -127,6 +126,18 @@ export async function handleInbound(input: InboundInput, channel: Channel): Prom
     // This row is also what the daily reply limit counts (lib/replyCounter.ts).
     data: { messageId: inbound.id, contactId: contact.id, generatedReply: decision.reply, wasSent: true },
   });
+
+  if (decision.kind === "AI" && decision.alert) {
+    console.log(`🔔 ${tag} Replied and alerted Abeddy: ${decision.alert}`);
+    await channel.notifyOwner(
+      formatEscalationNotice({
+        contactName: platform === "INSTAGRAM" ? `${contactName} (Instagram)` : contactName,
+        reason: decision.alert,
+        content,
+        replied: decision.reply,
+      })
+    );
+  }
 
   const source = decision.kind === "RULE" ? `rule "${decision.keyword}"` : `${decision.engine} engine`;
   console.log(`💬 ${tag} Replied via ${source}: "${decision.reply}"`);
