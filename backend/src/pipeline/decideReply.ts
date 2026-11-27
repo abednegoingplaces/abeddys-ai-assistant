@@ -58,12 +58,7 @@ export interface PipelineDeps {
 
 export type ReplyDecision =
   | { kind: "BLOCKED"; reason: string }
-  /**
-   * notifyOwner is false only for contacts nobody has classified yet (group UNKNOWN) when
-   * the sole reason is their group: Abeddy already sees those chats on his phone, and
-   * pinging him for every spam/OTP/business number would bury the alerts that matter.
-   */
-  | { kind: "ESCALATED"; reason: string; draft: string | null; notifyOwner: boolean }
+  | { kind: "ESCALATED"; reason: string; draft: string | null }
   | { kind: "RULE"; reply: string; keyword: string }
   | { kind: "AI"; reply: string; engine: "PERSONA" | "TUTOR" };
 
@@ -83,10 +78,7 @@ export async function decideReply(msg: InboundMessage, deps: PipelineDeps): Prom
     now: msg.now,
   });
   if (verdict.action === "BLOCK") return { kind: "BLOCKED", reason: verdict.reason };
-  if (verdict.action === "ESCALATE") {
-    const unclassifiedOnly = verdict.code === "GROUP" && msg.group === "UNKNOWN";
-    return { kind: "ESCALATED", reason: verdict.reason, draft: null, notifyOwner: !unclassifiedOnly };
-  }
+  if (verdict.action === "ESCALATE") return { kind: "ESCALATED", reason: verdict.reason, draft: null };
 
   // ── 2. Keyword rules ───────────────────────────────────
   const rule = findMatchingRule(msg.content, await deps.getActiveRules());
@@ -118,7 +110,6 @@ export async function decideReply(msg: InboundMessage, deps: PipelineDeps): Prom
       kind: "ESCALATED",
       reason: result.reason ?? (reply === "" ? "AI returned an empty reply" : "Flagged by AI engine"),
       draft: reply === "" ? null : reply,
-      notifyOwner: true,
     };
   }
   return { kind: "AI", reply, engine };

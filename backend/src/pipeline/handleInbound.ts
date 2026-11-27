@@ -97,16 +97,14 @@ export async function handleInbound(input: InboundInput, channel: Channel): Prom
         wasSent: false,
       },
     });
-    if (decision.notifyOwner) {
-      await channel.notifyOwner(
-        formatEscalationNotice({
-          contactName: platform === "INSTAGRAM" ? `${contactName} (Instagram)` : contactName,
-          reason: decision.reason,
-          content,
-          draft: decision.draft,
-        })
-      );
-    }
+    await channel.notifyOwner(
+      formatEscalationNotice({
+        contactName: platform === "INSTAGRAM" ? `${contactName} (Instagram)` : contactName,
+        reason: decision.reason,
+        content,
+        draft: decision.draft,
+      })
+    );
     return decision;
   }
 

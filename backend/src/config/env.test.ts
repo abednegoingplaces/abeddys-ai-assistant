@@ -55,7 +55,8 @@ describe("Environment Configuration Schema", () => {
     const parsed = validateEnv({ DATABASE_URL: "postgresql://x@localhost/db" });
     expect(parsed.PERSONA_MODEL).toBe("claude-opus-5-5");
     expect(parsed.TUTOR_MODEL).toBe("claude-opus-5-5");
-    expect(parsed.GEMINI_MODEL).toBe("gemini-3.8-flash");
+    expect(parsed.GEMINI_MODEL).toBe("gemini-3.5-flash");
+    expect(parsed.GEMINI_FALLBACK_MODELS).toBe("gemini-3.5-flash-lite,gemini-3.1-flash-lite");
     expect(parsed.TZ).toBe("Africa/Nairobi");
   });
 
