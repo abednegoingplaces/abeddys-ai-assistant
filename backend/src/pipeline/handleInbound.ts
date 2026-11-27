@@ -58,19 +58,28 @@ function pipelineDepsFor(contactId: string, inboundId: string): Omit<PipelineDep
   };
 }
 
+/** Finds the sender in the database, or saves them as a new UNKNOWN contact. */
+export async function getOrCreateContact(
+  platform: Platform,
+  senderKey: string,
+  resolveDisplayName?: () => Promise<string | null>
+) {
+  const existing = await prisma.contact.findFirst({ where: { phoneOrUsername: senderKey, platform } });
+  if (existing) return existing;
+  const displayName = resolveDisplayName ? await resolveDisplayName().catch(() => null) : null;
+  const contact = await prisma.contact.create({
+    data: { phoneOrUsername: senderKey, platform, group: "UNKNOWN", mode: "IMPERSONATOR", displayName },
+  });
+  console.log(`📇 New ${platform} contact: ${displayName ?? senderKey} [UNKNOWN, IMPERSONATOR]`);
+  return contact;
+}
+
 export async function handleInbound(input: InboundInput, channel: Channel): Promise<ReplyDecision> {
   const { platform, senderKey, content } = input;
   const tag = `[${platform} ${senderKey}]`;
 
   // ── 1. Get or create the contact ──────────────────────
-  let contact = await prisma.contact.findFirst({ where: { phoneOrUsername: senderKey, platform } });
-  if (!contact) {
-    const displayName = input.resolveDisplayName ? await input.resolveDisplayName().catch(() => null) : null;
-    contact = await prisma.contact.create({
-      data: { phoneOrUsername: senderKey, platform, group: "UNKNOWN", mode: "IMPERSONATOR", displayName },
-    });
-    console.log(`📇 New ${platform} contact: ${displayName ?? senderKey} [UNKNOWN, IMPERSONATOR]`);
-  }
+  const contact = await getOrCreateContact(platform, senderKey, input.resolveDisplayName);
 
   // ── 2. Log the inbound message ────────────────────────
   const inbound = await prisma.message.create({

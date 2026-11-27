@@ -4,6 +4,7 @@ import { handleInbound } from "../pipeline/handleInbound";
 import { isFromTheBot, isOwnSelfChat, neoReply, parseNeoCommand } from "../neo/command";
 import { askNeo, voiceTaskForNeo } from "../neo/neoEngine";
 import { createNeoDeps } from "../neo/liveDeps";
+import { handlePublicNeo } from "../neo/publicNeo";
 import {
   MAX_MEDIA_BYTES,
   decodedSize,
@@ -205,7 +206,8 @@ client.on("message_create", async (msg: Message) => {
 
     console.log(`🤖 Neo task: "${task.slice(0, 60)}"${media ? ` [+${media.kind}]` : ""}`);
     const answer = await askNeo(task || "Say hi, and in a few lines say what you can do for me.", neoDeps, media);
-    const sent = await client.sendMessage(chatId, neoReply(answer));
+    // Reply by quoting his message, so it's clear which question each answer belongs to.
+    const sent = await msg.reply(neoReply(answer));
     rememberSent(sent.id._serialized);
   } catch (error) {
     console.error("❌ Neo couldn't handle that message:", error);
@@ -224,16 +226,33 @@ client.on("message", async (msg: Message) => {
     const { content, media } = await readMessage(msg);
     if (!content) return;
 
+    const resolveDisplayName = async () => {
+      const contact = await msg.getContact();
+      return contact.name || contact.pushname || null;
+    };
+
+    // Someone asking Neo a question ("/neo …") gets Neo, not the usual auto-reply.
+    const question = parseNeoCommand(msg.body ?? "");
+    if (question !== null) {
+      await handlePublicNeo(
+        { platform: "WHATSAPP", senderKey: msg.from, question, content, media, resolveDisplayName },
+        {
+          reply: async (text) => {
+            await msg.reply(text);
+          },
+          notifyOwner,
+        }
+      );
+      return;
+    }
+
     await handleInbound(
       {
         platform: "WHATSAPP",
         senderKey: msg.from,
         content,
         media,
-        resolveDisplayName: async () => {
-          const contact = await msg.getContact();
-          return contact.name || contact.pushname || null;
-        },
+        resolveDisplayName,
       },
       {
         send: async (text) => {
