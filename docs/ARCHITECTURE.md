@@ -12,7 +12,7 @@
 - **Runtime & Language:** Node.js, TypeScript (Strict mode).
 - **Messaging Interface:** `whatsapp-web.js` (running headless Chromium via Puppeteer with `LocalAuth` session management).
 - **Data Persistence:** PostgreSQL (NeonDB) managed through Prisma ORM.
-- **In-Memory Cache & Rate Limiting:** Redis via `ioredis` (daily per-contact rate limits with automatic midnight TTL).
+- **Rate Limiting:** the daily per-contact reply limit counts today's sent `AutoReply` rows in Postgres (`lib/replyCounter.ts`), resetting at midnight in `TZ`.
 - **AI Models:**
   - Google Gemini (`GEMINI_MODEL`, default `gemini-3.5-flash` on Render) for Impersonator replies.
   - Anthropic Claude (`TUTOR_MODEL`) with Gemini as fallback for Tutor mode.
@@ -37,7 +37,7 @@ The decision pipeline (`src/pipeline/decideReply.ts`) runs for both WhatsApp and
      | Money request (not an offer) | escalate | escalate |
      | Location question | escalate | escalate |
 
-   - **Fails closed:** if Postgres or Redis can't be read, or the blackout settings are malformed, the message is blocked.
+   - **Fails closed:** if the database can't be read, or the blackout settings are malformed, the message is blocked.
 2. **Keyword rules (Tier 2).** These now run *after* the gate, so a keyword can no longer auto-answer a client, a stranger or a money request.
 3. **AI engine for the contact's mode.**
    - Persona output is parsed with a zod schema (`parsePersonaOutput`). Gemini is asked for `application/json`, and code fences are stripped.
@@ -59,7 +59,7 @@ src/
 │   ├── rules/hardSafety.ts   # Pure Tier 1 rules (+ tests)
 │   ├── rules/escalation.ts   # Pure Tier 3 rules (+ tests)
 │   ├── safetyEngine.ts       # Coordinator with injected data access (+ tests)
-│   └── liveSafety.ts         # Production wiring to Prisma + Redis
+│   └── liveSafety.ts         # Production wiring to Prisma
 ├── pipeline/decideReply.ts   # Gate → rules → AI decision, no side effects (+ tests)
 └── whatsapp/whatsappClient.ts# Side effects only: DB writes, delays, sending, owner notice
 ```

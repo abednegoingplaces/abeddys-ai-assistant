@@ -8,7 +8,6 @@ import { generateReply } from "../ai/personaEngine";
 import { generateTutorReply } from "../ai/tutorEngine";
 import { checkMessageSafety } from "../safety/liveSafety";
 import prisma from "../lib/prisma";
-import { incrementReplyCount } from "../lib/redis";
 import type { Platform } from "../safety/types";
 import { decideReply, formatEscalationNotice, type PipelineDeps, type ReplyDecision } from "./decideReply";
 
@@ -124,9 +123,9 @@ export async function handleInbound(input: InboundInput, channel: Channel): Prom
     data: { contactId: contact.id, direction: "OUTBOUND", content: decision.reply, platform },
   });
   await prisma.autoReply.create({
+    // This row is also what the daily reply limit counts (lib/replyCounter.ts).
     data: { messageId: inbound.id, contactId: contact.id, generatedReply: decision.reply, wasSent: true },
   });
-  await incrementReplyCount(contact.id);
 
   const source = decision.kind === "RULE" ? `rule "${decision.keyword}"` : `${decision.engine} engine`;
   console.log(`💬 ${tag} Replied via ${source}: "${decision.reply}"`);

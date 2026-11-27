@@ -15,8 +15,7 @@ A personal auto-reply bot for **WhatsApp** and **Instagram DMs**. It answers sim
 | WhatsApp | **whatsapp-web.js** (runs WhatsApp Web in headless Chromium) | Works with a normal personal WhatsApp account |
 | Instagram | **Instagram API with Instagram Login** (Meta, official) | The safe, allowed way to read and answer DMs |
 | AI replies | **Google Gemini** (persona); **Claude**, with Gemini as fallback (tutor) | Short replies in Abeddy's voice, and patient explanations |
-| Database | **PostgreSQL** on **Neon**, through **Prisma** | Stores contacts, messages, rules and settings |
-| Cache | **Redis** | Counts replies per contact per day (the daily limit) |
+| Database | **PostgreSQL** on **Neon**, through **Prisma** | Stores contacts, messages, rules and settings, and counts today's replies for the daily limit |
 | Validation | **Zod** | Checks the `.env` settings and the AI's JSON output |
 | Tests | **Vitest** | Unit tests for every safety rule and the decision pipeline |
 | Hosting | **Render** free plan (Docker), via `render.yaml` | Free, no card; GitHub Actions runs the tests on every PR |
@@ -37,7 +36,7 @@ Instagram DM ------+     (save to DB)                   +--> ESCALATED : stay si
 1. **Safety gate** (`safety/`). This runs first, for every message.
    - **Block silently:** the kill switch is on, it's blackout hours (default 01:00-06:00 Nairobi time), the daily reply limit is reached, the message contains a link, or it's a single character or emoji.
    - **Escalate to Abeddy:** money requests (unless someone is *sending* money) and location questions. In Impersonator mode, also **Client** or **Unknown** contacts and messages over 50 words.
-   - **Fails closed:** if the database or Redis is down, the bot stays silent.
+   - **Fails closed:** if the database is down, the bot stays silent.
 2. **Keyword rules.** Fixed replies you define in the `Rule` table.
 3. **AI reply** (`ai/`), depending on the contact's mode:
    - **Impersonator:** short replies in Abeddy's voice.
@@ -59,7 +58,7 @@ The full design, with the reasoning behind each rule, is in [docs/ARCHITECTURE.m
 Every file has one job:
 
 ```
-render.yaml                     Render Blueprint: the bot + a free Redis
+render.yaml                     Render Blueprint for hosting the bot
 backend/
 |-- Dockerfile                  Builds the bot with Chromium for hosting
 |-- prisma/schema.prisma        Database tables: Contact, Message, AutoReply, Rule, Settings, Persona
@@ -73,7 +72,7 @@ backend/
     |   |-- rules/hardSafety.ts Kill switch, blackout hours, daily limit, links, length
     |   |-- rules/escalation.ts Money, location, contact group, long messages
     |   |-- safetyEngine.ts     Runs the rules in order and returns BLOCK / ESCALATE / PROCEED
-    |   |-- liveSafety.ts       Connects the safety engine to the real database and Redis
+    |   |-- liveSafety.ts       Connects the safety engine to the real database
     |   `-- types.ts            Shared types
     |-- ai/
     |   |-- personaEngine.ts    Gemini prompt for replies in Abeddy's voice
@@ -85,7 +84,7 @@ backend/
     |   |-- router.ts           The /webhooks/instagram endpoint Meta calls
     |   |-- webhook.ts          Checks Meta's signature and pulls the text DMs out
     |   `-- api.ts              Sends a DM reply and looks up @usernames
-    `-- lib/                    Small helpers: Prisma client, Redis, admin auth, keep-alive
+    `-- lib/                    Small helpers: Prisma client, daily reply counter, admin auth, keep-alive
 ```
 
 Each `*.test.ts` file sits next to the file it tests.
@@ -95,7 +94,7 @@ Each `*.test.ts` file sits next to the file it tests.
 ### What you need
 
 - **Node.js 20 or newer**: <https://nodejs.org>
-- **Docker Desktop**, for the local Postgres and Redis: <https://www.docker.com/products/docker-desktop>. You can use a Neon database and a hosted Redis instead and skip step 3.
+- **Docker Desktop**, for a local Postgres database: <https://www.docker.com/products/docker-desktop>. You can use a free Neon database instead and skip step 3.
 - **A Gemini API key** (<https://aistudio.google.com/apikey>), an **Anthropic API key** (<https://console.anthropic.com>), or both
 - **A phone with WhatsApp** to link the bot to
 
@@ -113,7 +112,7 @@ git clone https://github.com/abednegoingplaces/abeddys-ai-assistant.git
 cd abeddys-ai-assistant
 ```
 
-### 3. Start Postgres and Redis
+### 3. Start Postgres
 
 Make sure Docker Desktop is running first.
 
@@ -144,7 +143,6 @@ Open `.env` in any editor and fill in:
 | Variable | What to put |
 | --- | --- |
 | `DATABASE_URL` | Leave the default for Docker, or paste your Neon connection string |
-| `REDIS_URL` | Leave the default for Docker, or paste your hosted Redis URL |
 | `GEMINI_API_KEY` | Your Gemini key (needed for Impersonator mode) |
 | `ANTHROPIC_API_KEY` | Your Anthropic key (Tutor mode; it falls back to Gemini if this is empty) |
 | `OWNER_WID` | Optional. Your own number as `2547XXXXXXXX@c.us` to receive escalation alerts |
@@ -259,10 +257,9 @@ While the Meta app is in **Development** mode, only accounts added as testers in
 
 ## Deploying for free (Render)
 
-The repo includes a `render.yaml` Blueprint. It creates two things on Render's **free** plan, with no card needed:
+The repo includes a `render.yaml` Blueprint. It creates the bot on Render's **free** plan, with no card needed:
 
 - **abeddy-bot:** the bot, built from `backend/Dockerfile`, with Chromium included.
-- **abeddy-bot-redis:** a free Key Value (Redis) instance for the daily reply counts.
 
 **Free-plan limits to know about:**
 
@@ -289,7 +286,6 @@ The repo includes a `render.yaml` Blueprint. It creates two things on Render's *
 | Problem | Fix |
 | --- | --- |
 | `Invalid environment configuration` on start | A required `.env` value is missing or wrong. The message names it. In production, `ADMIN_TOKEN` must be at least 24 characters. |
-| `Redis connection error` / `ECONNREFUSED 6379` | Redis isn't running. Start Docker Desktop and run `docker compose up -d` from the project folder. The bot stays silent until Redis is back. |
 | `Can't reach database server` | Postgres isn't running, or `DATABASE_URL` is wrong. |
 | Bot never replies to anyone | New contacts are `UNKNOWN`, so set their group in Prisma Studio. Also check `killSwitch`, blackout hours and the terminal's 🚫 / 🚩 log lines, which say why a message was skipped. |
 | Bot ignores "k" or a lone emoji | Messages under 2 characters are blocked on purpose; "hi", "ok", "yo" and "gn" do get replies. |

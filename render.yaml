@@ -18,19 +18,7 @@ services:
         value: gemini-3.5-flash
       - key: ADMIN_TOKEN
         generateValue: true
-      - key: REDIS_URL
-        fromService:
-          type: keyvalue
-          name: abeddy-bot-redis
-          property: connectionString
       - key: DATABASE_URL
         sync: false
       - key: GEMINI_API_KEY
         sync: false
-
-  - type: keyvalue
-    name: abeddy-bot-redis
-    plan: free
-    region: virginia
-    maxmemoryPolicy: noeviction
-    ipAllowList: []

@@ -10,7 +10,6 @@ const optionalString = <T extends z.ZodTypeAny>(schema: T) =>
 
 export const envSchema = z.object({
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
-  REDIS_URL: z.string().default("redis://localhost:6379"),
   ANTHROPIC_API_KEY: optionalString(z.string()),
   GEMINI_API_KEY: optionalString(z.string()),
   PORT: z.coerce.number().int().positive().default(3001),
@@ -78,7 +77,6 @@ export const env: Env =
     ? envSchema.parse({
         DATABASE_URL:
           process.env.DATABASE_URL || "postgresql://mock:mock@localhost:5432/test",
-        REDIS_URL: process.env.REDIS_URL || "redis://localhost:6379",
         PORT: process.env.PORT || "3001",
         NODE_ENV: "test",
         GEMINI_API_KEY: process.env.GEMINI_API_KEY || "mock-gemini-key",

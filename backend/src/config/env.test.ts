@@ -9,7 +9,6 @@ describe("Environment Configuration Schema", () => {
 
     const parsed = validateEnv(raw);
     expect(parsed.DATABASE_URL).toBe(raw.DATABASE_URL);
-    expect(parsed.REDIS_URL).toBe("redis://localhost:6379");
     expect(parsed.PORT).toBe(3001);
     expect(parsed.NODE_ENV).toBe("development");
     expect(parsed.GEMINI_API_KEY).toBeUndefined();

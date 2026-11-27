@@ -11,7 +11,7 @@ const settings: SafetySettings = {
 
 const midday = new Date("2026-11-27T12:00:00+03:00");
 
-function engine(overrides: Partial<{ settings: SafetySettings | null; count: number; fail: "settings" | "redis" }> = {}) {
+function engine(overrides: Partial<{ settings: SafetySettings | null; count: number; fail: "settings" | "counter" }> = {}) {
   return createSafetyEngine({
     timeZone: "Africa/Nairobi",
     getSettings: vi.fn(async () => {
@@ -19,7 +19,7 @@ function engine(overrides: Partial<{ settings: SafetySettings | null; count: num
       return overrides.settings === undefined ? settings : overrides.settings;
     }),
     getReplyCount: vi.fn(async () => {
-      if (overrides.fail === "redis") throw new Error("ECONNREFUSED");
+      if (overrides.fail === "counter") throw new Error("ECONNREFUSED");
       return overrides.count ?? 0;
     }),
   });
@@ -72,9 +72,9 @@ describe("checkMessageSafety — tier 1 blocks", () => {
     expect((await engine()(input({ content: "hi" }))).action).toBe("PROCEED");
   });
 
-  it("fails closed when Redis is down", async () => {
+  it("fails closed when the reply count can't be read", async () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const v = await engine({ fail: "redis" })(input());
+    const v = await engine({ fail: "counter" })(input());
     expect(v.action).toBe("BLOCK");
     expect(v.reason).toMatch(/ECONNREFUSED/);
     spy.mockRestore();

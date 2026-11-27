@@ -71,17 +71,21 @@ client.on("disconnected", async (reason) => {
   console.warn("⚠️ WhatsApp disconnected:", reason);
   if (shuttingDown || reconnecting) return;
   reconnecting = true;
-  console.log("🔄 Attempting reconnect in 5 seconds...");
-  // Tear down the old browser before re-initializing to avoid orphaned Chromium processes.
+  if (reason === "LOGOUT") {
+    console.log("🔑 This device was logged out. A new QR code will appear; scan it to link again.");
+  }
+  // Close the old browser fully, then start fresh. Every step is caught so a
+  // half-dead browser can never crash the bot.
   try {
     await client.destroy();
   } catch (err) {
-    console.warn("Could not destroy client cleanly:", err);
+    console.warn("Could not close the old WhatsApp browser cleanly:", err instanceof Error ? err.message : err);
   }
   setTimeout(() => {
+    console.log("🔄 Reconnecting WhatsApp...");
     client
       .initialize()
-      .catch((err) => console.error("❌ Reinitialization error:", err))
+      .catch((err) => console.error("❌ WhatsApp reconnect failed:", err instanceof Error ? err.message : err))
       .finally(() => {
         reconnecting = false;
       });
