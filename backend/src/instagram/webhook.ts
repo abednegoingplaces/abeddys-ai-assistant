@@ -13,7 +13,10 @@ export interface InstagramTextMessage {
   /** Our professional account's id. */
   recipientId: string;
   mid: string;
+  /** May be empty when the DM is only a photo, video or voice message. */
   text: string;
+  /** First photo/video/audio attachment, if any. */
+  attachment?: { type: "image" | "video" | "audio"; url: string };
   timestamp: number;
 }
 
@@ -45,9 +48,22 @@ export function isValidSignature(
   return timingSafeEqual(Buffer.from(given, "utf8"), Buffer.from(expected, "utf8"));
 }
 
+/** Picks the first photo, video or audio attachment that has a download URL. */
+function firstMediaAttachment(attachments: unknown): InstagramTextMessage["attachment"] {
+  if (!Array.isArray(attachments)) return undefined;
+  for (const a of attachments) {
+    const type = (a as { type?: unknown })?.type;
+    const url = (a as { payload?: { url?: unknown } })?.payload?.url;
+    if ((type === "image" || type === "video" || type === "audio") && typeof url === "string" && url.startsWith("https://")) {
+      return { type, url };
+    }
+  }
+  return undefined;
+}
+
 /**
- * Extracts inbound text DMs. Skips our own echoes, self-messages, messages from our own
- * account, deleted/unsupported messages and anything without text (stickers, media, reactions).
+ * Extracts inbound DMs (text and/or a photo, video or voice message). Skips our own echoes,
+ * self-messages, messages from our own account, deleted/unsupported messages and reactions.
  */
 export function extractTextMessages(payload: unknown, ownAccountId?: string): InstagramTextMessage[] {
   if (!payload || typeof payload !== "object") return [];
@@ -63,7 +79,7 @@ export function extractTextMessages(payload: unknown, ownAccountId?: string): In
         sender?: { id?: unknown };
         recipient?: { id?: unknown };
         timestamp?: unknown;
-        message?: { mid?: unknown; text?: unknown; is_echo?: unknown; is_self?: unknown; is_deleted?: unknown; is_unsupported?: unknown };
+        message?: { mid?: unknown; text?: unknown; attachments?: unknown; is_echo?: unknown; is_self?: unknown; is_deleted?: unknown; is_unsupported?: unknown };
       };
       const m = e.message;
       const senderId = e.sender?.id;
@@ -71,12 +87,15 @@ export function extractTextMessages(payload: unknown, ownAccountId?: string): In
       if (!m || typeof senderId !== "string" || typeof recipientId !== "string") continue;
       if (m.is_echo === true || m.is_self === true || m.is_deleted === true || m.is_unsupported === true) continue;
       if (ownAccountId && senderId === ownAccountId) continue;
-      if (typeof m.text !== "string" || m.text.trim() === "") continue;
+      const text = typeof m.text === "string" ? m.text.trim() : "";
+      const attachment = firstMediaAttachment(m.attachments);
+      if (!text && !attachment) continue;
       out.push({
         senderId,
         recipientId,
         mid: typeof m.mid === "string" ? m.mid : "",
-        text: m.text,
+        text,
+        ...(attachment ? { attachment } : {}),
         timestamp: typeof e.timestamp === "number" ? e.timestamp : Date.now(),
       });
     }

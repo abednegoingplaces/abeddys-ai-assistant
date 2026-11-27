@@ -9,6 +9,7 @@ import { generateTutorReply } from "../ai/tutorEngine";
 import { checkMessageSafety } from "../safety/liveSafety";
 import prisma from "../lib/prisma";
 import type { Platform } from "../safety/types";
+import type { InboundMedia } from "../media/media";
 import { decideReply, formatEscalationNotice, type PipelineDeps, type ReplyDecision } from "./decideReply";
 
 export interface Channel {
@@ -24,7 +25,9 @@ export interface InboundInput {
   platform: Platform;
   /** WhatsApp id (e.g. 2547…@c.us) or Instagram-scoped id (IGSID). */
   senderKey: string;
+  /** Message text. For media this is a label plus caption, e.g. "[photo] nice?". */
   content: string;
+  media?: InboundMedia;
   /** Looked up lazily, only for brand-new contacts. */
   resolveDisplayName?: () => Promise<string | null>;
 }
@@ -78,7 +81,7 @@ export async function handleInbound(input: InboundInput, channel: Channel): Prom
 
   // ── 3. Decide ─────────────────────────────────────────
   const decision = await decideReply(
-    { contactId: contact.id, contactName, group: contact.group, mode: contact.mode, platform, content },
+    { contactId: contact.id, contactName, group: contact.group, mode: contact.mode, platform, content, media: input.media },
     { checkSafety: checkMessageSafety, ...pipelineDepsFor(contact.id, inbound.id) }
   );
 

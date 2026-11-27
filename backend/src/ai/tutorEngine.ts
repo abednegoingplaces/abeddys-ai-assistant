@@ -2,7 +2,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { env } from "../config/env";
 import { withGeminiFallback } from "./geminiModels";
-import { buildChatHistory } from "./personaEngine";
+import { buildChatHistory, messageParts } from "./personaEngine";
+import type { InboundMedia } from "../media/media";
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -11,6 +12,8 @@ export interface GenerateTutorReplyParams {
   contactName?: string;
   incomingMessage: string;
   conversationHistory: { role: "user" | "assistant"; content: string }[];
+  /** Photos, videos and voice notes go to Gemini, which can see and hear them. */
+  media?: InboundMedia;
 }
 
 export interface GenerateTutorReplyResult {
@@ -45,7 +48,7 @@ export async function generateTutorReply(
   const geminiApiKey = env.GEMINI_API_KEY;
 
   // 1. Try Anthropic (Claude) if API key is provided
-  if (anthropicApiKey) {
+  if (anthropicApiKey && !params.media) {
     try {
       const anthropic = new Anthropic({ apiKey: anthropicApiKey });
 
@@ -99,7 +102,7 @@ export async function generateTutorReply(
 
       const replyText = await withGeminiFallback(async (modelName) => {
         const model = genAI.getGenerativeModel({ model: modelName, systemInstruction: TUTOR_SYSTEM_PROMPT });
-        const result = await model.startChat({ history }).sendMessage(incomingMessage);
+        const result = await model.startChat({ history }).sendMessage(messageParts(incomingMessage, params.media));
         return result.response.text().trim();
       });
 

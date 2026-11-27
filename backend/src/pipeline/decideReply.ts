@@ -11,6 +11,7 @@
  */
 import type { CheckMessageSafety } from "../safety/safetyEngine";
 import type { ContactGroup, ContactMode, Platform } from "../safety/types";
+import type { InboundMedia } from "../media/media";
 
 export type ChatTurn = { role: "user" | "assistant"; content: string };
 
@@ -32,6 +33,8 @@ export interface InboundMessage {
   mode: ContactMode;
   platform: Platform;
   content: string;
+  /** Photo, video, voice note or sticker, passed to the AI so it can see or hear it. */
+  media?: InboundMedia;
   now?: Date;
 }
 
@@ -47,12 +50,14 @@ export interface PipelineDeps {
     platform: Platform;
     incomingMessage: string;
     conversationHistory: ChatTurn[];
+    media?: InboundMedia;
   }): Promise<AiResult>;
   generateTutorReply(params: {
     contactId: string;
     contactName?: string;
     incomingMessage: string;
     conversationHistory: ChatTurn[];
+    media?: InboundMedia;
   }): Promise<AiResult>;
 }
 
@@ -94,6 +99,7 @@ export async function decideReply(msg: InboundMessage, deps: PipelineDeps): Prom
           contactName: msg.contactName,
           incomingMessage: msg.content,
           conversationHistory: history,
+          media: msg.media,
         })
       : await deps.generatePersonaReply({
           contactId: msg.contactId,
@@ -102,6 +108,7 @@ export async function decideReply(msg: InboundMessage, deps: PipelineDeps): Prom
           platform: msg.platform,
           incomingMessage: msg.content,
           conversationHistory: history,
+          media: msg.media,
         });
 
   const reply = result.reply?.trim() ?? "";

@@ -112,6 +112,23 @@ describe("decideReply — AI engines", () => {
   });
 });
 
+describe("decideReply — media", () => {
+  it("passes a photo through to the persona engine", async () => {
+    const d = deps();
+    const media = { kind: "image" as const, mimeType: "image/jpeg", base64: "AAAA" };
+    await decideReply(msg({ content: "[photo] nimeweza?", media }), d);
+    expect(d.generatePersonaReply).toHaveBeenCalledWith(expect.objectContaining({ media, incomingMessage: "[photo] nimeweza?" }));
+  });
+
+  it("still escalates when the caption asks for money", async () => {
+    const d = deps();
+    const media = { kind: "image" as const, mimeType: "image/jpeg", base64: "AAAA" };
+    const r = await decideReply(msg({ content: "[photo] nisendie mpesa", media }), d);
+    expect(r.kind).toBe("ESCALATED");
+    expect(d.generatePersonaReply).not.toHaveBeenCalled();
+  });
+});
+
 describe("findMatchingRule", () => {
   const rules = [
     { keyword: "", response: "never" },

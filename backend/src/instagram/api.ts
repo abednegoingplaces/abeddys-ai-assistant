@@ -1,6 +1,7 @@
 /** Minimal Instagram Graph API client (Instagram API with Instagram Login). */
 import { env } from "../config/env";
-import { clampToInstagramLimit } from "./webhook";
+import { clampToInstagramLimit, type InstagramTextMessage } from "./webhook";
+import { MAX_MEDIA_BYTES, mediaKindFor, normalizeMimeType, type InboundMedia } from "../media/media";
 
 const base = () => `https://graph.instagram.com/${env.IG_GRAPH_VERSION}`;
 
@@ -37,5 +38,23 @@ export async function fetchInstagramUsername(igsid: string): Promise<string | nu
     return data.username ? `@${data.username}` : data.name ?? null;
   } catch {
     return null;
+  }
+}
+
+/** Downloads a DM attachment so the AI can see or hear it. Returns undefined if it can't. */
+export async function fetchInstagramMedia(
+  attachment: NonNullable<InstagramTextMessage["attachment"]>
+): Promise<InboundMedia | undefined> {
+  try {
+    const res = await fetch(attachment.url, { signal: AbortSignal.timeout(20_000) });
+    if (!res.ok) return undefined;
+    if (Number(res.headers.get("content-length") ?? 0) > MAX_MEDIA_BYTES) return undefined;
+    const bytes = Buffer.from(await res.arrayBuffer());
+    if (bytes.length > MAX_MEDIA_BYTES) return undefined;
+    const mimeType = normalizeMimeType(res.headers.get("content-type") ?? "");
+    const kind = mediaKindFor(mimeType) ?? attachment.type;
+    return { kind, mimeType: mimeType || `${attachment.type}/*`, base64: bytes.toString("base64") };
+  } catch {
+    return undefined;
   }
 }

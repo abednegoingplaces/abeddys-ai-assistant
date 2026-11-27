@@ -60,6 +60,21 @@ describe("extractTextMessages", () => {
     expect(extractTextMessages(payload(dm({}, { text: "   " })), OWN)).toEqual([]);
   });
 
+  it("keeps photo, video and voice DMs that have a download URL", () => {
+    const withMedia = (type: string, text?: string) =>
+      payload(dm({}, { text, attachments: [{ type, payload: { url: `https://cdn.example/${type}` } }] }));
+    expect(extractTextMessages(withMedia("image"), OWN)[0]).toMatchObject({ text: "", attachment: { type: "image", url: "https://cdn.example/image" } });
+    expect(extractTextMessages(withMedia("video", "check this"), OWN)[0]).toMatchObject({ text: "check this", attachment: { type: "video" } });
+    expect(extractTextMessages(withMedia("audio"), OWN)[0]).toMatchObject({ attachment: { type: "audio" } });
+  });
+
+  it("ignores shares, links and non-https media URLs", () => {
+    const share = payload(dm({}, { text: undefined, attachments: [{ type: "share", payload: { url: "https://x" } }] }));
+    const http = payload(dm({}, { text: undefined, attachments: [{ type: "image", payload: { url: "http://x" } }] }));
+    expect(extractTextMessages(share, OWN)).toEqual([]);
+    expect(extractTextMessages(http, OWN)).toEqual([]);
+  });
+
   it("ignores reactions/seen events and non-Instagram payloads", () => {
     expect(extractTextMessages(payload({ sender: { id: "1" }, recipient: { id: OWN }, read: { mid: "x" } }), OWN)).toEqual([]);
     expect(extractTextMessages({ object: "page", entry: [] }, OWN)).toEqual([]);
