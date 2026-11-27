@@ -1,79 +1,161 @@
-import prisma from "../lib/prisma";
-import { getReplyCount } from "../lib/redis";
+/**
+ * Safety gate — the single place that decides whether a message may be answered automatically.
+ *
+ * It runs BEFORE keyword rules and BEFORE any LLM, for every contact mode, and it fails closed:
+ * if settings or the rate-limit store can't be read, nothing is sent.
+ *
+ * The rule logic lives in pure functions under ./rules; this module only gathers the data
+ * (settings, reply counts) and applies the rules in order. Data access is injected so the
+ * whole pipeline is unit-testable without Postgres or Redis.
+ */
+import {
+  containsUrl,
+  isDailyLimitExceeded,
+  isKillSwitchActive,
+  isMessageTooShort,
+  isWithinBlackoutHours,
+} from "./rules/hardSafety";
+import {
+  isLocationInquiry,
+  isMoneyRequest,
+  isWordCountExceeded,
+  shouldEscalateContactGroup,
+} from "./rules/escalation";
+import type {
+  ContactMode,
+  EscalationCheckResult,
+  SafetyCheckResult,
+  SafetyInput,
+  SafetySettings,
+  SafetyVerdict,
+} from "./types";
 
-interface SafetyCheckResult {
-  shouldReply: boolean;
-  reason: string;
+export interface SafetyDeps {
+  getSettings(): Promise<SafetySettings | null>;
+  getReplyCount(contactId: string): Promise<number>;
+  timeZone: string;
 }
 
-/**
- * Runs a series of safety checks to determine whether the bot should reply.
- * Checks are evaluated in order; the first failing check short-circuits.
- */
-export async function checkShouldReply(
-  contactId: string,
-  platform: string,
-  messageContent: string
-): Promise<SafetyCheckResult> {
-  // Fetch settings (singleton row with id = 1)
-  const settings = await prisma.settings.findUnique({ where: { id: 1 } });
+export const MAX_IMPERSONATOR_WORDS = 50;
 
-  if (!settings) {
-    return { shouldReply: false, reason: "Settings not configured" };
-  }
+// ─── Tier 1: hard safety ─────────────────────────────────
 
-  // ── Rule A: Kill switch ──────────────────────────────
-  if (settings.killSwitch) {
+export function evaluateHardSafety(
+  settings: SafetySettings,
+  replyCount: number,
+  content: string,
+  now: Date,
+  timeZone: string
+): SafetyCheckResult {
+  if (isKillSwitchActive(settings.killSwitch)) {
     return { shouldReply: false, reason: "Kill switch is active" };
   }
 
-  // ── Rule B: Blackout hours ───────────────────────────
-  const now = new Date();
-  const currentMinutes = now.getHours() * 60 + now.getMinutes();
-
-  const [startH, startM] = settings.blackoutStart.split(":").map(Number);
-  const [endH, endM] = settings.blackoutEnd.split(":").map(Number);
-  const blackoutStartMinutes = startH * 60 + startM;
-  const blackoutEndMinutes = endH * 60 + endM;
-
-  if (blackoutStartMinutes <= blackoutEndMinutes) {
-    // Same-day blackout (e.g., 01:00 – 06:00)
-    if (currentMinutes >= blackoutStartMinutes && currentMinutes < blackoutEndMinutes) {
-      return {
-        shouldReply: false,
-        reason: `Blackout hours (${settings.blackoutStart} – ${settings.blackoutEnd})`,
-      };
-    }
-  } else {
-    // Overnight blackout (e.g., 23:00 – 06:00)
-    if (currentMinutes >= blackoutStartMinutes || currentMinutes < blackoutEndMinutes) {
-      return {
-        shouldReply: false,
-        reason: `Blackout hours (${settings.blackoutStart} – ${settings.blackoutEnd})`,
-      };
-    }
+  let inBlackout: boolean;
+  try {
+    inBlackout = isWithinBlackoutHours(now, settings.blackoutStart, settings.blackoutEnd, timeZone);
+  } catch (err) {
+    return {
+      shouldReply: false,
+      reason: `Blackout settings are invalid (${err instanceof Error ? err.message : "unknown"})`,
+    };
+  }
+  if (inBlackout) {
+    return {
+      shouldReply: false,
+      reason: `Blackout hours (${settings.blackoutStart} – ${settings.blackoutEnd})`,
+    };
   }
 
-  // ── Rule C: Daily reply limit ────────────────────────
-  const replyCount = await getReplyCount(contactId);
-  if (replyCount >= settings.dailyReplyLimit) {
+  if (isDailyLimitExceeded(replyCount, settings.dailyReplyLimit)) {
     return {
       shouldReply: false,
       reason: `Daily reply limit reached (${replyCount}/${settings.dailyReplyLimit})`,
     };
   }
 
-  // ── Rule D: Message contains a URL ───────────────────
-  const urlPattern = /https?:\/\/[^\s]+|www\.[^\s]+/i;
-  if (urlPattern.test(messageContent)) {
+  if (containsUrl(content)) {
     return { shouldReply: false, reason: "Message contains a URL" };
   }
 
-  // ── Rule E: Message too short ────────────────────────
-  if (messageContent.trim().length < 3) {
+  if (isMessageTooShort(content)) {
     return { shouldReply: false, reason: "Message is too short (under 3 characters)" };
   }
 
-  // ── All checks passed ───────────────────────────────
   return { shouldReply: true, reason: "All safety checks passed" };
 }
+
+// ─── Tier 3: escalation ──────────────────────────────────
+
+/**
+ * Escalation rules, per mode:
+ * - Money requests and location questions escalate in EVERY mode (a tutor contact
+ *   asking for M-Pesa still needs Abeddy).
+ * - Group (CLIENT/UNKNOWN) and the 50-word limit are impersonation rules: the bot must
+ *   not pretend to be Abeddy to strangers or answer long messages as him. Tutor mode is
+ *   assigned deliberately and openly says it's an AI, so long study questions are fine.
+ */
+export function evaluateEscalation(
+  content: string,
+  group: SafetyInput["group"],
+  mode: ContactMode
+): EscalationCheckResult {
+  if (mode === "IMPERSONATOR" && shouldEscalateContactGroup(group)) {
+    return { shouldFlag: true, reason: `Contact group is ${group} — requires manual handling` };
+  }
+
+  if (mode === "IMPERSONATOR" && isWordCountExceeded(content, MAX_IMPERSONATOR_WORDS)) {
+    return {
+      shouldFlag: true,
+      reason: `Long message (over ${MAX_IMPERSONATOR_WORDS} words) — needs Abeddy's attention`,
+    };
+  }
+
+  if (isMoneyRequest(content).isRequest) {
+    return { shouldFlag: true, reason: "Money request detected — needs Abeddy's decision" };
+  }
+
+  if (isLocationInquiry(content)) {
+    return { shouldFlag: true, reason: "Location question — needs Abeddy's response" };
+  }
+
+  return { shouldFlag: false };
+}
+
+// ─── Coordinator ─────────────────────────────────────────
+
+export function createSafetyEngine(deps: SafetyDeps) {
+  return async function checkMessageSafety(input: SafetyInput): Promise<SafetyVerdict> {
+    const now = input.now ?? new Date();
+
+    let settings: SafetySettings | null;
+    let replyCount: number;
+    try {
+      settings = await deps.getSettings();
+      replyCount = await deps.getReplyCount(input.contactId);
+    } catch (err) {
+      // Fail closed: if we can't check the limits, we don't reply.
+      const reason = `Safety data unavailable (${err instanceof Error ? err.message : "unknown error"})`;
+      console.error(`🛑 ${reason}`);
+      return { action: "BLOCK", reason };
+    }
+
+    if (!settings) {
+      return { action: "BLOCK", reason: "Settings not configured" };
+    }
+
+    const hard = evaluateHardSafety(settings, replyCount, input.content, now, deps.timeZone);
+    if (!hard.shouldReply) {
+      return { action: "BLOCK", reason: hard.reason };
+    }
+
+    const escalation = evaluateEscalation(input.content, input.group, input.mode);
+    if (escalation.shouldFlag) {
+      return { action: "ESCALATE", reason: escalation.reason ?? "Needs manual review" };
+    }
+
+    return { action: "PROCEED", reason: hard.reason };
+  };
+}
+
+export type CheckMessageSafety = ReturnType<typeof createSafetyEngine>;
