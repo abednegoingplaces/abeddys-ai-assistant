@@ -172,7 +172,7 @@ backend/
 The gaps in section 4 are closed. Sections 2 and 3 describe the **old** order. The current pipeline (`src/pipeline/decideReply.ts`) is:
 
 1. **Safety gate** (`src/safety/safetyEngine.ts`). Runs for every contact mode, before anything else.
-   - **Tier 1, hard safety → BLOCK** (silent): kill switch, blackout hours (evaluated in `TZ`, default `Africa/Nairobi`), daily limit, links, messages under 3 characters.
+   - **Tier 1, hard safety → BLOCK** (silent): kill switch, blackout hours (evaluated in `TZ`, default `Africa/Nairobi`), daily limit, links, messages under 2 characters.
    - **Tier 3, escalation → ESCALATE** (silent, logged, owner notified):
 
      | Rule | IMPERSONATOR | TUTOR |

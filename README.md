@@ -13,7 +13,7 @@ A personal auto-reply bot for WhatsApp, with Instagram planned. It answers simpl
 Every incoming message goes through the same pipeline, in this order:
 
 1. **Safety gate.** It runs before anything else, for every contact.
-   - **Block silently:** the kill switch is on, it's blackout hours (default 01:00–06:00 Nairobi time), the contact's daily reply limit is reached, the message contains a link, or it is under 3 characters.
+   - **Block silently:** the kill switch is on, it's blackout hours (default 01:00–06:00 Nairobi time), the contact's daily reply limit is reached, the message contains a link, or it is a single character or emoji.
    - **Escalate to Abeddy:** money requests (unless someone is *sending* money) and location questions. For impersonated contacts, also messages from **Client** or **Unknown** contacts and messages over 50 words.
    - If the database or Redis can't be reached, the bot stays silent. It never guesses.
 2. **Keyword rules.** Fixed replies you define in the `Rule` table.
@@ -183,7 +183,7 @@ All of these run from the `backend` folder.
 | `Redis connection error` / `ECONNREFUSED 6379` | Redis isn't running. Start Docker Desktop and run `docker compose up -d` from the project folder. The bot stays silent until Redis is back. |
 | `Can't reach database server` | Postgres isn't running, or `DATABASE_URL` is wrong. |
 | Bot never replies to anyone | New contacts are `UNKNOWN`, so set their group in Prisma Studio. Also check `killSwitch`, blackout hours and the terminal's 🚫 / 🚩 log lines, which say why a message was skipped. |
-| Bot ignores "hi" or "ok" | The safety gate blocks messages under 3 characters, so very short greetings get no reply. |
+| Bot ignores "k" or a lone emoji | Messages under 2 characters are blocked on purpose; "hi", "ok", "yo" and "gn" do get replies. |
 | `/api/qr` returns 401 | Add `?token=<ADMIN_TOKEN>`, or open it from the same computer in development. |
 | `/api/qr` returns 404 | WhatsApp is already linked. |
 | QR keeps reappearing / logged out | Delete the `backend/sessions` folder, restart, and scan again. |

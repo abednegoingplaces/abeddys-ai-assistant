@@ -68,7 +68,8 @@ describe("checkMessageSafety — tier 1 blocks", () => {
 
   it("blocks links and too-short messages", async () => {
     expect((await engine()(input({ content: "see www.x.com" }))).action).toBe("BLOCK");
-    expect((await engine()(input({ content: "ok" }))).action).toBe("BLOCK");
+    expect((await engine()(input({ content: "k" }))).action).toBe("BLOCK");
+    expect((await engine()(input({ content: "hi" }))).action).toBe("PROCEED");
   });
 
   it("fails closed when Redis is down", async () => {

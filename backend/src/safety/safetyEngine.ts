@@ -9,6 +9,7 @@
  * whole pipeline is unit-testable without Postgres or Redis.
  */
 import {
+  MIN_MESSAGE_LENGTH,
   containsUrl,
   isDailyLimitExceeded,
   isKillSwitchActive,
@@ -79,7 +80,7 @@ export function evaluateHardSafety(
   }
 
   if (isMessageTooShort(content)) {
-    return { shouldReply: false, reason: "Message is too short (under 3 characters)" };
+    return { shouldReply: false, reason: `Message is too short (under ${MIN_MESSAGE_LENGTH} characters)` };
   }
 
   return { shouldReply: true, reason: "All safety checks passed" };
