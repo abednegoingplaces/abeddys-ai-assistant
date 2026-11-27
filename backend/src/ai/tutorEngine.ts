@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { env } from "../config/env";
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -38,8 +39,8 @@ export async function generateTutorReply(
 ): Promise<GenerateTutorReplyResult> {
   const { incomingMessage, conversationHistory } = params;
 
-  const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
-  const geminiApiKey = process.env.GEMINI_API_KEY;
+  const anthropicApiKey = env.ANTHROPIC_API_KEY;
+  const geminiApiKey = env.GEMINI_API_KEY;
 
   // 1. Try Anthropic (Claude) if API key is provided
   if (anthropicApiKey) {
@@ -57,14 +58,24 @@ export async function generateTutorReply(
       });
 
       const response = await anthropic.messages.create({
-        model: "claude-3-5-sonnet-20241022",
-        max_tokens: 1024,
+        model: env.TUTOR_MODEL,
+        // Thinking is always on for current Claude models and counts toward max_tokens.
+        max_tokens: 16000,
         system: TUTOR_SYSTEM_PROMPT,
         messages,
       });
 
       const textBlock = response.content.find((block) => block.type === "text");
-      const replyText = textBlock ? textBlock.text : null;
+      const replyText = textBlock && textBlock.type === "text" ? textBlock.text.trim() : "";
+
+      // Never silently drop a message: anything other than a complete text answer goes to the owner.
+      if (response.stop_reason !== "end_turn" || !replyText) {
+        return {
+          reply: null,
+          shouldFlag: true,
+          reason: `Tutor reply incomplete (stop_reason: ${response.stop_reason ?? "unknown"})`,
+        };
+      }
 
       return {
         reply: replyText,
@@ -80,7 +91,7 @@ export async function generateTutorReply(
     try {
       const genAI = new GoogleGenerativeAI(geminiApiKey);
       const model = genAI.getGenerativeModel({
-        model: "gemini-1.5-flash",
+        model: env.GEMINI_MODEL,
         systemInstruction: TUTOR_SYSTEM_PROMPT,
       });
 
@@ -102,7 +113,7 @@ export async function generateTutorReply(
       console.error("❌ Gemini API call failed in Tutor Engine:", error);
       return {
         reply: null,
-        shouldFlag: false,
+        shouldFlag: true,
         reason: `Tutor AI Engine error: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
@@ -110,7 +121,7 @@ export async function generateTutorReply(
 
   return {
     reply: null,
-    shouldFlag: false,
+    shouldFlag: true,
     reason: "No valid AI API keys found (ANTHROPIC_API_KEY or GEMINI_API_KEY)",
   };
 }

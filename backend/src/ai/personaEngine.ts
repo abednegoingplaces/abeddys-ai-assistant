@@ -1,11 +1,13 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { z } from "zod";
+import { env } from "../config/env";
+import type { ContactGroup as Group, Platform } from "../safety/types";
 
 // ─── Types ───────────────────────────────────────────────
+// Escalation (client/unknown contacts, money, location, long messages) is decided by the
+// safety gate before this engine is ever called — see src/safety/safetyEngine.ts.
 
-type Group = "FRIENDS" | "FAMILY" | "COLLEAGUES" | "CLIENT" | "UNKNOWN";
-type Platform = "WHATSAPP" | "INSTAGRAM";
-
-interface GenerateReplyParams {
+export interface GenerateReplyParams {
   contactId: string;
   contactName: string;
   group: Group;
@@ -14,25 +16,49 @@ interface GenerateReplyParams {
   conversationHistory: { role: "user" | "assistant"; content: string }[];
 }
 
-interface GenerateReplyResult {
+export interface GenerateReplyResult {
   reply: string | null;
   shouldFlag: boolean;
   reason?: string;
 }
 
-// ─── Money-request keywords ──────────────────────────────
+// ─── Output parsing (fails closed) ───────────────────────
 
-const MONEY_REQUEST_KEYWORDS = [
-  "ganji",
-  "doooh",
-  "okolea",
-  "niwai",
-  "nitakurefund",
-  "mpesa",
-  "nisendie",
-  "nipe",
-  "nisaidie pesa",
-];
+const personaOutputSchema = z.object({
+  reply: z.string().nullable().optional(),
+  shouldFlag: z.boolean().optional().default(false),
+  reason: z.string().optional(),
+});
+
+/** Removes a surrounding ```json … ``` fence, which models add despite instructions. */
+function stripCodeFence(raw: string): string {
+  const match = /^```[a-zA-Z]*\s*\n?([\s\S]*?)\n?\s*```$/.exec(raw.trim());
+  return match ? match[1].trim() : raw.trim();
+}
+
+/**
+ * Turns raw model output into a reply decision. Anything that isn't the expected JSON
+ * shape is flagged for Abeddy instead of being sent — raw model text never reaches a chat.
+ */
+export function parsePersonaOutput(raw: string): GenerateReplyResult {
+  let json: unknown;
+  try {
+    json = JSON.parse(stripCodeFence(raw));
+  } catch {
+    return { reply: null, shouldFlag: true, reason: "AI output was not valid JSON" };
+  }
+
+  const parsed = personaOutputSchema.safeParse(json);
+  if (!parsed.success) {
+    return { reply: null, shouldFlag: true, reason: "AI output had an unexpected shape" };
+  }
+
+  const reply = parsed.data.reply?.trim() || null;
+  if (!parsed.data.shouldFlag && !reply) {
+    return { reply: null, shouldFlag: true, reason: "AI returned an empty reply" };
+  }
+  return { reply, shouldFlag: parsed.data.shouldFlag, reason: parsed.data.reason };
+}
 
 // ─── System Prompt Builder ───────────────────────────────
 
@@ -173,75 +199,17 @@ If the message needs a reply AND should also be flagged:
   ].join("\n\n");
 }
 
-// ─── Pre-flight checks (before calling the API) ─────────
-
-function preFlightCheck(
-  params: GenerateReplyParams
-): GenerateReplyResult | null {
-  const { group, incomingMessage } = params;
-  const msgLower = incomingMessage.toLowerCase().trim();
-  const wordCount = incomingMessage.trim().split(/\s+/).length;
-
-  // CLIENT or UNKNOWN → always flag, never reply
-  if (group === "CLIENT" || group === "UNKNOWN") {
-    return {
-      reply: null,
-      shouldFlag: true,
-      reason: `Contact group is ${group} — requires manual handling`,
-    };
-  }
-
-  // Long messages (over 50 words) → flag
-  if (wordCount > 50) {
-    return {
-      reply: null,
-      shouldFlag: true,
-      reason: "Long message (over 50 words) — needs Abeddy's attention",
-    };
-  }
-
-  // Money request keywords (unless offering)
-  const offeringPatterns = /\b(nimekutumia|nimesend|pokea|sent you|sending you)\b/i;
-  const isOffering = offeringPatterns.test(incomingMessage);
-
-  if (!isOffering) {
-    const hasMoneyRequest = MONEY_REQUEST_KEYWORDS.some((kw) =>
-      msgLower.includes(kw)
-    );
-    if (hasMoneyRequest) {
-      return {
-        reply: null,
-        shouldFlag: true,
-        reason: "Money request detected — needs Abeddy's decision",
-      };
-    }
-  }
-
-  // Location questions
-  const locationPatterns = /\b(uko wapi|where are you|location yako|uko side gani)\b/i;
-  if (locationPatterns.test(incomingMessage)) {
-    return {
-      reply: null,
-      shouldFlag: true,
-      reason: "Location question — needs Abeddy's response",
-    };
-  }
-
-  return null; // No pre-flight issue, proceed to API
-}
-
 // ─── Main Export ─────────────────────────────────────────
 
 export async function generateReply(
   params: GenerateReplyParams
 ): Promise<GenerateReplyResult> {
-  // Run pre-flight checks
-  const preFlightResult = preFlightCheck(params);
-  if (preFlightResult) {
-    return preFlightResult;
-  }
-
   const { group, platform, incomingMessage, conversationHistory } = params;
+
+  // Defence in depth: the safety gate already escalates these, but never impersonate to them.
+  if (group === "CLIENT" || group === "UNKNOWN") {
+    return { reply: null, shouldFlag: true, reason: `Contact group is ${group} — requires manual handling` };
+  }
 
   // Build the system prompt
   const systemPrompt = buildSystemPrompt(group, platform);
@@ -253,10 +221,11 @@ export async function generateReply(
   ];
 
   try {
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+    const genAI = new GoogleGenerativeAI(env.GEMINI_API_KEY || "");
     const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
+      model: env.GEMINI_MODEL,
       systemInstruction: systemPrompt,
+      generationConfig: { responseMimeType: "application/json" },
     });
 
     const chat = model.startChat({
@@ -267,26 +236,7 @@ export async function generateReply(
     });
 
     const result = await chat.sendMessage(incomingMessage);
-    const rawOutput = result.response.text().trim();
-
-    // Parse the JSON response
-    let parsed: { reply: string | null; shouldFlag: boolean; reason?: string };
-    try {
-      parsed = JSON.parse(rawOutput);
-    } catch {
-      // If the AI didn't return valid JSON, treat the raw text as the reply
-      // (fallback for robustness)
-      return {
-        reply: rawOutput,
-        shouldFlag: false,
-      };
-    }
-
-    return {
-      reply: parsed.reply ?? null,
-      shouldFlag: parsed.shouldFlag ?? false,
-      reason: parsed.reason,
-    };
+    return parsePersonaOutput(result.response.text());
   } catch (error) {
     console.error("❌ Gemini API error:", error);
     return {
