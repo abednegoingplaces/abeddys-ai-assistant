@@ -20,10 +20,14 @@ export interface SafetyCheckResult {
   reason: string;
 }
 
+/** Which escalation rule fired. */
+export type EscalationCode = "GROUP" | "LONG_MESSAGE" | "MONEY" | "LOCATION";
+
 /** Tier 3 (escalation): does a human need to see this first? */
 export interface EscalationCheckResult {
   shouldFlag: boolean;
   reason?: string;
+  code?: EscalationCode;
 }
 
 /**
@@ -34,7 +38,7 @@ export interface EscalationCheckResult {
  */
 export type SafetyVerdict =
   | { action: "BLOCK"; reason: string }
-  | { action: "ESCALATE"; reason: string }
+  | { action: "ESCALATE"; reason: string; code: EscalationCode }
   | { action: "PROCEED"; reason: string };
 
 export interface SafetyInput {

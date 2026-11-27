@@ -187,14 +187,16 @@ client.on("message", async (msg: Message) => {
           wasSent: false,
         },
       });
-      await notifyOwner(
-        formatEscalationNotice({
-          contactName,
-          reason: decision.reason,
-          content: messageBody,
-          draft: decision.draft,
-        })
-      );
+      if (decision.notifyOwner) {
+        await notifyOwner(
+          formatEscalationNotice({
+            contactName,
+            reason: decision.reason,
+            content: messageBody,
+            draft: decision.draft,
+          })
+        );
+      }
       return;
     }
 

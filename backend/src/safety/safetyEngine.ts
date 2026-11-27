@@ -101,22 +101,23 @@ export function evaluateEscalation(
   mode: ContactMode
 ): EscalationCheckResult {
   if (mode === "IMPERSONATOR" && shouldEscalateContactGroup(group)) {
-    return { shouldFlag: true, reason: `Contact group is ${group} — requires manual handling` };
+    return { shouldFlag: true, code: "GROUP", reason: `Contact group is ${group} — requires manual handling` };
   }
 
   if (mode === "IMPERSONATOR" && isWordCountExceeded(content, MAX_IMPERSONATOR_WORDS)) {
     return {
       shouldFlag: true,
+      code: "LONG_MESSAGE",
       reason: `Long message (over ${MAX_IMPERSONATOR_WORDS} words) — needs Abeddy's attention`,
     };
   }
 
   if (isMoneyRequest(content).isRequest) {
-    return { shouldFlag: true, reason: "Money request detected — needs Abeddy's decision" };
+    return { shouldFlag: true, code: "MONEY", reason: "Money request detected — needs Abeddy's decision" };
   }
 
   if (isLocationInquiry(content)) {
-    return { shouldFlag: true, reason: "Location question — needs Abeddy's response" };
+    return { shouldFlag: true, code: "LOCATION", reason: "Location question — needs Abeddy's response" };
   }
 
   return { shouldFlag: false };
@@ -150,8 +151,8 @@ export function createSafetyEngine(deps: SafetyDeps) {
     }
 
     const escalation = evaluateEscalation(input.content, input.group, input.mode);
-    if (escalation.shouldFlag) {
-      return { action: "ESCALATE", reason: escalation.reason ?? "Needs manual review" };
+    if (escalation.shouldFlag && escalation.code) {
+      return { action: "ESCALATE", reason: escalation.reason ?? "Needs manual review", code: escalation.code };
     }
 
     return { action: "PROCEED", reason: hard.reason };
