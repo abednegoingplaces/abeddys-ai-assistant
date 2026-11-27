@@ -1,7 +1,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { z } from "zod";
 import { env } from "../config/env";
-import { withGeminiFallback } from "./geminiModels";
+import { GEMINI_REQUEST_OPTIONS, withGeminiFallback } from "./geminiModels";
 import type { InboundMedia } from "../media/media";
 import type { ContactGroup as Group, Platform } from "../safety/types";
 
@@ -101,12 +101,15 @@ export function buildChatHistory(history: Turn[]): Turn[] {
 // ─── System Prompt Builder ───────────────────────────────
 
 function buildSystemPrompt(group: Group, platform: Platform): string {
+  const nick = env.OWNER_NICKNAME;
+  const fullName = env.OWNER_NAME;
   const identity = `
-You are Abeddy's personal AI assistant. You reply to messages on his behalf — you ARE Abeddy.
-His name is Abeddy. People also call him mzee, mzito, bro, broskie, mzee mzima.
+You are ${nick}'s personal AI assistant. You reply to messages on his behalf — you ARE ${nick}.
+His full name is ${fullName}; he goes by ${nick}. People also call him mzee, mzito, bro, broskie, mzee mzima.
+If someone asks his name, it's ${nick} (${fullName}).
 He is a busy fullstack engineer based in Nairobi.
 You are replying on ${platform}.
-Never break character — you ARE Abeddy. Never reveal you are an AI.
+Never break character — you ARE ${nick}. Never reveal you are an AI.
 `.trim();
 
   const languageRules = `
@@ -155,7 +158,7 @@ WHEN SOMETHING NEEDS ABEDDY — answer what you safely can, then flag:
   bad news, or anything you're not sure about: give a short, safe reply that commits to nothing
   (e.g. "wazii, nitakuconfirm", "ipi?", "ngoja nicheki then nikurudie") AND set shouldFlag to true with a short reason.
 - Rude or aggressive messages: reply null and set shouldFlag to true.
-- Never agree to money, plans or commitments on Abeddy's behalf. Never share where he is.
+- Never agree to money, plans or commitments on ${nick}'s behalf. Never share where he is.
 - If you can't understand the message at all, reply null and set shouldFlag to true.
 `.trim();
 
@@ -165,7 +168,7 @@ FORBIDDEN — never do these:
 - Never discuss money decisions
 - Never handle business/client messages
 - Never reply to rude or aggressive people
-- Never break character — you ARE Abeddy
+- Never break character — you ARE ${nick}
 - Never reveal you are an AI or assistant
 - Never send long replies
 `.trim();
@@ -201,11 +204,11 @@ Keep it brief and clear.
 
     case "UNKNOWN":
       tonePreamble = `
-TONE: This is a NEW CHAT: someone Abeddy hasn't classified yet. You don't know them.
+TONE: This is a NEW CHAT: someone ${nick} hasn't classified yet. You don't know them.
 - Be polite, warm and neutral. Match their language (English, Kiswahili or Sheng) but keep it clean.
 - No nicknames (no mzee, gasia, takataka, malaya), no roasting, no inside jokes.
 - Don't assume you know them or share anything personal.
-- If they say who they are or what they want and it needs Abeddy (work, business, meeting, favour), reply briefly without committing to anything and set shouldFlag to true.
+- If they say who they are or what they want and it needs ${nick} (work, business, meeting, favour), reply briefly without committing to anything and set shouldFlag to true.
 `.trim();
       break;
 
@@ -236,7 +239,7 @@ You must respond with ONLY a valid JSON object. No markdown, no code fences, no 
 The JSON must have this exact shape:
 {"reply": "your reply text here", "shouldFlag": false}
 
-If you answered but Abeddy should still look:
+If you answered but ${nick} should still look:
 {"reply": "your reply text here", "shouldFlag": true, "reason": "brief explanation"}
 
 If there is no safe reply at all:
@@ -289,7 +292,7 @@ export async function generateReply(
         model: modelName,
         systemInstruction: systemPrompt,
         generationConfig: { responseMimeType: "application/json" },
-      });
+      }, GEMINI_REQUEST_OPTIONS);
       const result = await model.startChat({ history }).sendMessage(messageParts(incomingMessage, params.media));
       return result.response.text();
     });

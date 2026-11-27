@@ -159,6 +159,7 @@ Open `.env` in any editor and fill in:
 | `GEMINI_API_KEY` | Your Gemini key (needed for Impersonator mode) |
 | `ANTHROPIC_API_KEY` | Your Anthropic key (Tutor mode; it falls back to Gemini if this is empty) |
 | `OWNER_WID` | Optional. Alerts go to your own "Message yourself" chat by default; set this (e.g. `2547XXXXXXXX@c.us`) only to send them elsewhere |
+| `OWNER_NAME` / `OWNER_NICKNAME` | Your full name and what Neo calls you (defaults: Abednego Ndimu / Abeddy) |
 | `ADMIN_TOKEN` | Optional locally, **required in production**. At least 24 random characters |
 
 To generate a strong `ADMIN_TOKEN`:

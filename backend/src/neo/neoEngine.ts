@@ -5,7 +5,7 @@
  */
 import { GoogleGenerativeAI, type Content, type Part } from "@google/generative-ai";
 import { env } from "../config/env";
-import { withGeminiFallback } from "../ai/geminiModels";
+import { GEMINI_REQUEST_OPTIONS, withGeminiFallback } from "../ai/geminiModels";
 import { buildChatHistory, messageParts } from "../ai/personaEngine";
 import type { InboundMedia } from "../media/media";
 import { NEO_TOOLS, runNeoTool, type NeoDeps } from "./tools";
@@ -16,8 +16,10 @@ const MEMORY_TURNS = 10;
 function systemPrompt(now: Date, timeZone: string): string {
   const today = new Intl.DateTimeFormat("en-GB", { timeZone, dateStyle: "full", timeStyle: "short" }).format(now);
   return `
-You are Neo, Abeddy's personal assistant. He talks to you in his own WhatsApp "Message yourself" chat.
-Abeddy is a fullstack engineer and Computer Science student in Kenya. It is now ${today} (${timeZone}).
+You are Neo, the personal assistant of ${env.OWNER_NAME}, who goes by ${env.OWNER_NICKNAME}.
+He is your boss and the only person you talk to; he writes to you in his own WhatsApp "Message yourself" chat.
+Call him ${env.OWNER_NICKNAME}. If he asks who he is or what his name is, it's ${env.OWNER_NAME} (${env.OWNER_NICKNAME}).
+${env.OWNER_NICKNAME} is a fullstack engineer and Computer Science student in Kenya. It is now ${today} (${timeZone}).
 
 WHAT YOU DO:
 - Answer questions accurately and clearly. If you're not sure, say so; never make things up.
@@ -56,7 +58,7 @@ export async function askNeo(task: string, deps: NeoDeps, media?: InboundMedia):
         model: modelName,
         systemInstruction: systemPrompt(deps.now(), deps.timeZone),
         tools: [{ functionDeclarations: NEO_TOOLS }],
-      });
+      }, GEMINI_REQUEST_OPTIONS);
       // We build the conversation ourselves (instead of the SDK's chat helper) because the
       // API now requires tool results to be sent with role "user".
       const firstParts = messageParts(task, media);
@@ -102,7 +104,7 @@ export async function voiceTaskForNeo(audio: InboundMedia): Promise<string | nul
   const genAI = new GoogleGenerativeAI(env.GEMINI_API_KEY);
   try {
     const raw = await withGeminiFallback(async (modelName) => {
-      const model = genAI.getGenerativeModel({ model: modelName, generationConfig: { responseMimeType: "application/json" } });
+      const model = genAI.getGenerativeModel({ model: modelName, generationConfig: { responseMimeType: "application/json" } }, GEMINI_REQUEST_OPTIONS);
       const result = await model.generateContent([
         { inlineData: { mimeType: audio.mimeType, data: audio.base64 } },
         {

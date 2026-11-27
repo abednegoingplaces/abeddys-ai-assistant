@@ -12,12 +12,22 @@ export function geminiModelsToTry(primary: string, fallbacks: string): string[] 
   return [...new Set(all)];
 }
 
-/** True for errors that another model can get around: daily quota (429) or overload (503). */
+/** Every Gemini request gives up after this long, so a stuck model can't freeze a reply. */
+export const GEMINI_TIMEOUT_MS = 45_000;
+/** Pass as the 2nd argument of getGenerativeModel(). */
+export const GEMINI_REQUEST_OPTIONS = { timeout: GEMINI_TIMEOUT_MS };
+
+/**
+ * True for errors another model can get around: daily quota (429), overload (503),
+ * a request that timed out, or a dropped connection.
+ */
 export function isQuotaOrOverload(error: unknown): boolean {
   const status = (error as { status?: unknown })?.status;
   if (status === 429 || status === 503) return true;
+  const name = (error as { name?: unknown })?.name;
+  if (name === "AbortError" || name === "TimeoutError") return true;
   const message = error instanceof Error ? error.message : String(error);
-  return /\[(429|503)\b/.test(message);
+  return /\[(429|503)\b|aborted|timed? ?out|fetch failed|ECONNRESET|ETIMEDOUT/i.test(message);
 }
 
 /** Runs `call` with each model in turn until one succeeds or a non-quota error occurs. */
@@ -30,7 +40,7 @@ export async function withGeminiFallback<T>(call: (model: string) => Promise<T>)
     } catch (error) {
       lastError = error;
       if (!isQuotaOrOverload(error)) throw error;
-      console.warn(`⚠️ Gemini model ${model} is over its limit or busy; trying the next one`);
+      console.warn(`⚠️ Gemini model ${model} is over its limit, busy or too slow; trying the next one`);
     }
   }
   throw lastError;
