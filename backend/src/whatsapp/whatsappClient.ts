@@ -21,6 +21,8 @@ const LOW_MEMORY_ARGS = [
 
 const client = new Client({
   authStrategy: new LocalAuth({ dataPath: "./sessions" }),
+  // Free hosts have very little CPU, so WhatsApp Web can take well over the default 30s to load.
+  authTimeoutMs: 120_000,
   puppeteer: {
     // PUPPETEER_EXECUTABLE_PATH (set in the Dockerfile) points at the system Chromium.
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
