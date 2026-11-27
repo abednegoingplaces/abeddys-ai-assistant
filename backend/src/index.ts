@@ -11,6 +11,7 @@ import prisma from "./lib/prisma";
 import redis from "./lib/redis";
 import { createRequireAdmin } from "./lib/auth";
 import { startKeepAlive } from "./lib/keepAlive";
+import { instagramRouter } from "./instagram/router";
 
 import { env } from "./config/env";
 
@@ -21,6 +22,8 @@ const PORT = env.PORT;
 
 // CORS is closed unless a dashboard origin is configured.
 app.use(cors({ origin: env.DASHBOARD_ORIGIN ?? false }));
+// Instagram's webhook needs the raw body for signature checks, so it goes before express.json().
+app.use(instagramRouter);
 app.use(express.json());
 
 const requireAdmin = createRequireAdmin({ adminToken: env.ADMIN_TOKEN, nodeEnv: env.NODE_ENV });

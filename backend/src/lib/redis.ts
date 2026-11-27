@@ -42,20 +42,3 @@ export async function incrementReplyCount(contactId: string): Promise<void> {
     await redis.expire(key, secondsUntilMidnight);
   }
 }
-
-/**
- * Get the cached conversation context for a contact.
- */
-export async function getContactContext(contactId: string): Promise<string | null> {
-  const key = `context:${contactId}`;
-  return redis.get(key);
-}
-
-/**
- * Cache conversation context for a contact.
- * Expires after 1 hour (3600 seconds).
- */
-export async function setContactContext(contactId: string, context: string): Promise<void> {
-  const key = `context:${contactId}`;
-  await redis.set(key, context, "EX", 3600);
-}

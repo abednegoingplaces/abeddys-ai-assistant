@@ -1,33 +1,94 @@
-﻿# Abeddy's AI Assistant 🤖
+# Abeddy's AI Assistant 🤖
 
-A personal auto-reply bot for WhatsApp, with Instagram planned. It answers simple, everyday messages in Abeddy's own voice (English, Kiswahili and Sheng) and sends anything sensitive to him instead of replying.
+A personal auto-reply bot for **WhatsApp** and **Instagram DMs**. It answers simple, everyday messages in Abeddy's own voice (English, Kiswahili and Sheng), and passes anything sensitive to him instead of replying.
 
 ![CI](https://github.com/abednegoingplaces/abeddys-ai-assistant/actions/workflows/ci.yml/badge.svg)
 
-**Built with:** Node.js + TypeScript, whatsapp-web.js, Google Gemini (persona), Claude with Gemini fallback (tutor), PostgreSQL (Neon) via Prisma, Redis, and Render (free plan) for hosting.
+---
+
+## Tech stack
+
+| Part | Tool | Why |
+| --- | --- | --- |
+| Language | **TypeScript** on **Node.js 22** | One language for everything, and types catch mistakes early |
+| Web server | **Express** | Serves `/health`, the WhatsApp QR page and the Instagram webhook |
+| WhatsApp | **whatsapp-web.js** (runs WhatsApp Web in headless Chromium) | Works with a normal personal WhatsApp account |
+| Instagram | **Instagram API with Instagram Login** (Meta, official) | The safe, allowed way to read and answer DMs |
+| AI replies | **Google Gemini** (persona); **Claude**, with Gemini as fallback (tutor) | Short replies in Abeddy's voice, and patient explanations |
+| Database | **PostgreSQL** on **Neon**, through **Prisma** | Stores contacts, messages, rules and settings |
+| Cache | **Redis** | Counts replies per contact per day (the daily limit) |
+| Validation | **Zod** | Checks the `.env` settings and the AI's JSON output |
+| Tests | **Vitest** | Unit tests for every safety rule and the decision pipeline |
+| Hosting | **Render** free plan (Docker), via `render.yaml` | Free, no card; GitHub Actions runs the tests on every PR |
 
 ---
 
-## How it decides what to do
+## How it works
 
-Every incoming message goes through the same pipeline, in this order:
+```
+WhatsApp message --+
+                   +--> handleInbound --> decideReply --+--> BLOCKED   : stay silent
+Instagram DM ------+     (save to DB)                   +--> ESCALATED : stay silent, alert Abeddy
+                                                        +--> RULE / AI : wait a few seconds, reply
+```
 
-1. **Safety gate.** It runs before anything else, for every contact.
-   - **Block silently:** the kill switch is on, it's blackout hours (default 01:00–06:00 Nairobi time), the contact's daily reply limit is reached, the message contains a link, or it is a single character or emoji.
-   - **Escalate to Abeddy:** money requests (unless someone is *sending* money) and location questions. For impersonated contacts, also messages from **Client** or **Unknown** contacts and messages over 50 words.
-   - If the database or Redis can't be reached, the bot stays silent. It never guesses.
+`decideReply` always checks things in this order:
+
+1. **Safety gate** (`safety/`). This runs first, for every message.
+   - **Block silently:** the kill switch is on, it's blackout hours (default 01:00-06:00 Nairobi time), the daily reply limit is reached, the message contains a link, or it's a single character or emoji.
+   - **Escalate to Abeddy:** money requests (unless someone is *sending* money) and location questions. In Impersonator mode, also **Client** or **Unknown** contacts and messages over 50 words.
+   - **Fails closed:** if the database or Redis is down, the bot stays silent.
 2. **Keyword rules.** Fixed replies you define in the `Rule` table.
-3. **AI reply**, depending on the contact's mode:
-   - **Impersonator:** short replies in Abeddy's voice, matching the sender's language.
-   - **Tutor:** patient explanations that are open about being an AI.
+3. **AI reply** (`ai/`), depending on the contact's mode:
+   - **Impersonator:** short replies in Abeddy's voice.
+   - **Tutor:** an AI study helper that says it's an AI.
 
-Escalated messages are logged and never answered. If you set `OWNER_WID`, you also get a WhatsApp message with the sender, the reason, the text and any suggested reply. To avoid spamming you, messages that were escalated only because the contact is still `UNKNOWN` are logged without a ping.
+**Escalated messages:**
+- They are logged and never answered.
+- If `OWNER_WID` is set, you also get a WhatsApp alert with the sender, the reason, the text and any suggested reply.
+- No alert is sent when the *only* reason was that the contact is still `UNKNOWN`. That keeps the alerts from becoming spam.
 
 > **New contacts start as `UNKNOWN`, so the bot stays silent with them until you give them a group** (Friends, Family or Colleagues). See [Managing contacts](#managing-contacts).
 
-More detail is in [ARCHITECTURE_NOTES.md](ARCHITECTURE_NOTES.md).
+The full design, with the reasoning behind each rule, is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ---
+
+## Project layout
+
+Every file has one job:
+
+```
+render.yaml                     Render Blueprint: the bot + a free Redis
+backend/
+|-- Dockerfile                  Builds the bot with Chromium for hosting
+|-- prisma/schema.prisma        Database tables: Contact, Message, AutoReply, Rule, Settings, Persona
+`-- src/
+    |-- index.ts                Starts the web server, WhatsApp, and the keep-alive ping
+    |-- config/env.ts           Reads and checks every setting from .env
+    |-- pipeline/
+    |   |-- handleInbound.ts    Save message -> decide -> reply or escalate (shared by both apps)
+    |   `-- decideReply.ts      The decision itself: safety gate -> keyword rules -> AI
+    |-- safety/
+    |   |-- rules/hardSafety.ts Kill switch, blackout hours, daily limit, links, length
+    |   |-- rules/escalation.ts Money, location, contact group, long messages
+    |   |-- safetyEngine.ts     Runs the rules in order and returns BLOCK / ESCALATE / PROCEED
+    |   |-- liveSafety.ts       Connects the safety engine to the real database and Redis
+    |   `-- types.ts            Shared types
+    |-- ai/
+    |   |-- personaEngine.ts    Gemini prompt for replies in Abeddy's voice
+    |   `-- tutorEngine.ts      Claude (or Gemini) prompt for Tutor mode
+    |-- whatsapp/
+    |   |-- whatsappClient.ts   Connects to WhatsApp and passes messages to handleInbound
+    |   `-- filters.ts          Ignores groups, statuses and broadcasts
+    |-- instagram/
+    |   |-- router.ts           The /webhooks/instagram endpoint Meta calls
+    |   |-- webhook.ts          Checks Meta's signature and pulls the text DMs out
+    |   `-- api.ts              Sends a DM reply and looks up @usernames
+    `-- lib/                    Small helpers: Prisma client, Redis, admin auth, keep-alive
+```
+
+Each `*.test.ts` file sits next to the file it tests.
 
 ## Run it locally
 
@@ -165,6 +226,37 @@ All of these run from the `backend` folder.
 
 ---
 
+## Instagram DMs (optional)
+
+The bot answers Instagram DMs through Meta's official API. All of it is free. Instagram only lets the bot reply **within 24 hours of the person's last message**.
+
+### One-time setup
+
+1. **Switch to a Professional account.** In the Instagram app: **Settings -> Account type and tools -> Switch to professional account**, then choose **Creator**. It's free, and you can switch back later.
+2. **Create a Meta app.** Go to <https://developers.facebook.com/apps>, click **Create app**, and choose the **Instagram** use case ("Manage messaging & content on Instagram").
+3. **Add your Instagram account.** Under **API setup with Instagram login**, connect your account and click **Generate token**. Copy the token.
+4. **Note two values** from the app's dashboard:
+   - your **Instagram account ID**
+   - the **Instagram app secret**
+5. **Add these to the bot's environment** (Render -> abeddy-bot -> **Environment**, or `backend/.env` locally):
+
+| Variable | Value |
+| --- | --- |
+| `IG_ACCESS_TOKEN` | The token from step 3 |
+| `IG_APP_SECRET` | The Instagram app secret |
+| `IG_ACCOUNT_ID` | Your Instagram account ID |
+| `IG_VERIFY_TOKEN` | Any random phrase you make up (at least 8 characters) |
+
+6. **Connect the webhook.** In the Meta app, under **Configure webhooks**:
+   - **Callback URL:** `https://<your-service>.onrender.com/webhooks/instagram`
+   - **Verify token:** the same phrase as `IG_VERIFY_TOKEN`
+   - Click **Verify and save**, then subscribe to the **messages** field.
+7. **Test it.** Send a DM to your account from another Instagram account. A new contact appears in Prisma Studio. Give it a group, and the next DM gets a reply.
+
+While the Meta app is in **Development** mode, only accounts added as testers in the app can trigger replies. That's fine for personal use.
+
+---
+
 ## Deploying for free (Render)
 
 The repo includes a `render.yaml` Blueprint. It creates two things on Render's **free** plan, with no card needed:
@@ -206,20 +298,6 @@ The repo includes a `render.yaml` Blueprint. It creates two things on Render's *
 | QR keeps reappearing / logged out | Locally: delete the `backend/sessions` folder, restart, and scan again. On Render: this is expected after every restart or deploy, so rescan at `/api/qr?token=…`. |
 | Render logs show the service restarting with memory errors | The 512 MB free instance is too small for Chromium at that moment. Redeploy, or move to a host with more RAM. |
 | Chromium / Puppeteer fails to launch | Run `npx puppeteer browsers install chrome` in `backend`, then start again. |
+| Instagram: Meta says "callback URL couldn't be validated" | The bot must be live, and `IG_VERIFY_TOKEN` must match the verify token exactly. |
+| Instagram: DMs arrive but get no reply | Check the logs for "bad signature" (wrong `IG_APP_SECRET`), "Instagram send failed" (expired token, or past the 24-hour window), or a block/escalation line (the safety gate). |
 | `npx` or `npm` is not recognised | Install Node.js and reopen the terminal. |
-
----
-
-## Project layout
-
-```
-backend/
-├── prisma/schema.prisma      Database models (Contact, Message, AutoReply, Rule, Settings…)
-└── src/
-    ├── safety/               Safety gate: pure rules + coordinator (tested)
-    ├── pipeline/             Gate → rules → AI decision (tested)
-    ├── ai/                   Persona (Gemini) and Tutor (Claude/Gemini) engines
-    ├── whatsapp/             WhatsApp client and chat filters
-    ├── config/env.ts         Validated environment settings
-    └── index.ts              HTTP server (/health, /api/status, /api/qr)
-```

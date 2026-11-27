@@ -35,6 +35,12 @@ export const envSchema = z.object({
   RENDER_EXTERNAL_URL: optionalString(z.string().url()),
   // Extra Chromium flags for small (512 MB) containers.
   CHROMIUM_LOW_MEMORY: z.preprocess((v) => v === "true" || v === "1", z.boolean()).default(false),
+  // Instagram DMs (Instagram API with Instagram Login). All optional; the webhook is off until set.
+  IG_VERIFY_TOKEN: optionalString(z.string().min(8)),
+  IG_APP_SECRET: optionalString(z.string()),
+  IG_ACCESS_TOKEN: optionalString(z.string()),
+  IG_ACCOUNT_ID: optionalString(z.string()),
+  IG_GRAPH_VERSION: z.string().regex(/^v\d+\.\d+$/).default("v25.0"),
   // Timezone used for blackout hours and daily limit resets.
   TZ: z.string().default("Africa/Nairobi"),
 }).superRefine((val, ctx) => {
