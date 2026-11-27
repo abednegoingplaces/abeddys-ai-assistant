@@ -1,6 +1,9 @@
 import { Client, LocalAuth, Message } from "whatsapp-web.js";
 import qrcode from "qrcode-terminal";
 import { handleInbound } from "../pipeline/handleInbound";
+import { isFromTheBot, isOwnSelfChat, neoReply, parseNeoCommand } from "../neo/command";
+import { askNeo, voiceTaskForNeo } from "../neo/neoEngine";
+import { createNeoDeps } from "../neo/liveDeps";
 import {
   MAX_MEDIA_BYTES,
   decodedSize,
@@ -61,10 +64,33 @@ client.on("qr", (qr) => {
   console.log(`🌐 Or visit http://localhost:${env.PORT}/api/qr`);
 });
 
-client.on("ready", () => {
+/** Abeddy's own chat ids: his phone id (…@c.us) and hidden id (…@lid). Used to find "Message yourself". */
+const ownIds = new Set<string>();
+/** Ids of messages the bot itself sent to Abeddy (alerts, Neo replies), so Neo never answers them. */
+const sentByBot = new Set<string>();
+
+function rememberSent(id: string): void {
+  sentByBot.add(id);
+  if (sentByBot.size > 500) sentByBot.delete(sentByBot.values().next().value as string);
+}
+
+client.on("ready", async () => {
   latestQr = null;
   whatsappReady = true;
   console.log("✅ WhatsApp client is ready!");
+
+  const own = client.info?.wid?._serialized;
+  if (own) {
+    ownIds.add(own);
+    try {
+      const [ids] = await client.getContactLidAndPhone([own]);
+      if (ids?.lid) ownIds.add(ids.lid);
+      if (ids?.pn) ownIds.add(ids.pn);
+    } catch (err) {
+      console.warn("Could not look up your hidden WhatsApp id:", err instanceof Error ? err.message : err);
+    }
+  }
+  console.log(`🤖 Neo is listening in "Message yourself" for messages starting with /neo`);
 });
 
 client.on("auth_failure", (msg) => {
@@ -113,7 +139,8 @@ export async function notifyOwner(text: string): Promise<void> {
     return;
   }
   try {
-    await client.sendMessage(target, text);
+    const sent = await client.sendMessage(target, text);
+    rememberSent(sent.id._serialized);
   } catch (err) {
     console.warn("Could not notify owner of escalation:", err);
   }
@@ -126,7 +153,7 @@ export async function notifyOwner(text: string): Promise<void> {
  */
 async function readMessage(msg: Message): Promise<{ content: string; media?: InboundMedia }> {
   const caption = msg.body ?? "";
-  if (!msg.hasMedia) return { content: caption.trim() };
+  if (!msg.hasMedia || msg.type === "document") return { content: caption.trim() };
 
   try {
     const file = await msg.downloadMedia();
@@ -145,6 +172,48 @@ async function readMessage(msg: Message): Promise<{ content: string; media?: Inb
   }
 }
 
+// ─── Neo (Abeddy's assistant in "Message yourself") ──────
+
+const neoDeps = createNeoDeps(async (key) => {
+  const contact = await client.getContactById(key);
+  return contact.name || contact.pushname || null;
+});
+
+client.on("message_create", async (msg: Message) => {
+  try {
+    const chatId = (msg.id as { remote?: string }).remote ?? msg.to;
+    // A message the bot sent to itself (an alert) tells us another id for the self-chat.
+    if (msg.fromMe && msg.from === msg.to && chatId && ownIds.has(msg.to) === false && msg.to.endsWith("@lid")) {
+      ownIds.add(msg.to);
+    }
+    if (!isOwnSelfChat(msg.fromMe, chatId, ownIds)) return;
+    if (isFromTheBot(msg.body ?? "", sentByBot, msg.id._serialized)) return;
+
+    let task = parseNeoCommand(msg.body ?? "");
+    let media: InboundMedia | undefined;
+
+    const isVoice = msg.type === "ptt" || msg.type === "audio";
+    if (task === null && isVoice) {
+      // Voice notes can't have a caption: Neo listens and only acts if you said "Neo" first.
+      media = (await readMessage(msg)).media;
+      task = media ? await voiceTaskForNeo(media) : null;
+      media = undefined;
+    } else if (task !== null && msg.hasMedia) {
+      media = (await readMessage(msg)).media;
+    }
+    if (task === null) return;
+
+    console.log(`🤖 Neo task: "${task.slice(0, 60)}"${media ? ` [+${media.kind}]` : ""}`);
+    const answer = await askNeo(task || "Say hi, and in a few lines say what you can do for me.", neoDeps, media);
+    const sent = await client.sendMessage(chatId, neoReply(answer));
+    rememberSent(sent.id._serialized);
+  } catch (error) {
+    console.error("❌ Neo couldn't handle that message:", error);
+  }
+});
+
+// ─── Auto-replies to everyone else ───────────────────────
+
 client.on("message", async (msg: Message) => {
   try {
     // Groups, status updates and broadcasts are never answered.
@@ -156,7 +225,16 @@ client.on("message", async (msg: Message) => {
     if (!content) return;
 
     await handleInbound(
-      { platform: "WHATSAPP", senderKey: msg.from, content, media },
+      {
+        platform: "WHATSAPP",
+        senderKey: msg.from,
+        content,
+        media,
+        resolveDisplayName: async () => {
+          const contact = await msg.getContact();
+          return contact.name || contact.pushname || null;
+        },
+      },
       {
         send: async (text) => {
           await msg.reply(text);
