@@ -2,7 +2,8 @@ import { Client, LocalAuth, Message } from "whatsapp-web.js";
 import qrcode from "qrcode-terminal";
 import { generateReply } from "../ai/personaEngine";
 import { generateTutorReply } from "../ai/tutorEngine";
-import { checkShouldReply } from "../safety/safetyEngine";
+import { checkMessageSafety } from "../safety/liveSafety";
+import { decideReply, formatEscalationNotice, type PipelineDeps } from "../pipeline/decideReply";
 import prisma from "../lib/prisma";
 import { incrementReplyCount } from "../lib/redis";
 import { env } from "../config/env";
@@ -86,12 +87,42 @@ client.on("disconnected", async (reason) => {
 
 // ─── Message Handler ─────────────────────────────────────
 
+const pipelineDepsFor = (contactId: string, inboundId: string): Omit<PipelineDeps, "checkSafety"> => ({
+  getActiveRules: () =>
+    prisma.rule.findMany({ where: { isActive: true }, orderBy: { priority: "desc" } }),
+  getHistory: async () => {
+    const recent = await prisma.message.findMany({
+      where: { contactId },
+      orderBy: { createdAt: "desc" },
+      take: 10,
+    });
+    return recent
+      .reverse()
+      .filter((m) => m.id !== inboundId)
+      .map((m) => ({
+        role: (m.direction === "INBOUND" ? "user" : "assistant") as "user" | "assistant",
+        content: m.content,
+      }));
+  },
+  generatePersonaReply: generateReply,
+  generateTutorReply,
+});
+
+async function notifyOwner(text: string): Promise<void> {
+  if (!env.OWNER_WID) return;
+  try {
+    await client.sendMessage(env.OWNER_WID, text);
+  } catch (err) {
+    console.warn("Could not notify owner of escalation:", err);
+  }
+}
+
 client.on("message", async (msg: Message) => {
   try {
     // Ignore group messages and status/broadcast updates
     if (shouldIgnoreChat(msg.from)) return;
 
-    // Ignore self messages
+    // Ignore self messages (this also covers escalation notices sent to OWNER_WID)
     if (msg.fromMe) return;
 
     const phoneOrUsername = msg.from;
@@ -101,10 +132,7 @@ client.on("message", async (msg: Message) => {
 
     // ── 1. Get or create Contact ────────────────────────
     let contact = await prisma.contact.findFirst({
-      where: {
-        phoneOrUsername,
-        platform: "WHATSAPP",
-      },
+      where: { phoneOrUsername, platform: "WHATSAPP" },
     });
 
     if (!contact) {
@@ -129,188 +157,82 @@ client.on("message", async (msg: Message) => {
       },
     });
 
-    // ── 3. Run Safety Checks ─────────────────────────────
-    const safetyResult = await checkShouldReply(
-      contact.id,
-      "WHATSAPP",
-      messageBody
+    const contactName = contact.displayName || phoneOrUsername.replace(/@c\.us$/, "");
+
+    // ── 3. Decide: safety gate → keyword rules → AI engine ──
+    const decision = await decideReply(
+      {
+        contactId: contact.id,
+        contactName,
+        group: contact.group,
+        mode: contact.mode,
+        platform: "WHATSAPP",
+        content: messageBody,
+      },
+      { checkSafety: checkMessageSafety, ...pipelineDepsFor(contact.id, savedInboundMessage.id) }
     );
 
-    if (!safetyResult.shouldReply) {
-      console.log(
-        `🚫 [${phoneOrUsername}] Safety check blocked reply: ${safetyResult.reason}`
+    if (decision.kind === "BLOCKED") {
+      console.log(`🚫 [${phoneOrUsername}] Safety check blocked reply: ${decision.reason}`);
+      return;
+    }
+
+    if (decision.kind === "ESCALATED") {
+      console.log(`🚩 [${phoneOrUsername}] Escalated for review: ${decision.reason}`);
+      await prisma.autoReply.create({
+        data: {
+          messageId: savedInboundMessage.id,
+          contactId: contact.id,
+          generatedReply: decision.draft ?? `[FLAGGED — no reply sent] ${decision.reason}`,
+          wasSent: false,
+        },
+      });
+      await notifyOwner(
+        formatEscalationNotice({
+          contactName,
+          reason: decision.reason,
+          content: messageBody,
+          draft: decision.draft,
+        })
       );
       return;
     }
 
-    // ── Fetch Settings for Delay & Behavior ─────────────
+    // ── 4. Send reply (rule or AI) & log it ─────────────
     const settings = await prisma.settings.findUnique({ where: { id: 1 } });
     const minDelay = settings?.minDelaySeconds ?? 3;
     const maxDelay = settings?.maxDelaySeconds ?? 15;
 
-    // ── 4. Check Active Rules (Keyword Matching) ─────────
-    const activeRules = await prisma.rule.findMany({
-      where: { isActive: true },
-      orderBy: { priority: "desc" },
-    });
-
-    const msgLower = messageBody.toLowerCase();
-    const matchedRule = activeRules.find((rule) =>
-      msgLower.includes(rule.keyword.toLowerCase())
-    );
-
-    if (matchedRule) {
-      console.log(
-        `⚡ [${phoneOrUsername}] Matched Rule keyword "${matchedRule.keyword}"`
-      );
-
-      // Simulate delay & read receipt
-      try {
-        const chat = await msg.getChat();
-        await chat.sendSeen();
-      } catch (err) {
-        console.warn("Could not mark message as seen:", err);
-      }
-      await sleep(randomDelay(minDelay, maxDelay));
-
-      // Send rule response
-      await msg.reply(matchedRule.response);
-
-      // Save outbound message & auto-reply
-      await prisma.message.create({
-        data: {
-          contactId: contact.id,
-          direction: "OUTBOUND",
-          content: matchedRule.response,
-          platform: "WHATSAPP",
-        },
-      });
-
-      await prisma.autoReply.create({
-        data: {
-          messageId: savedInboundMessage.id,
-          contactId: contact.id,
-          generatedReply: matchedRule.response,
-          wasSent: true,
-        },
-      });
-
-      await incrementReplyCount(contact.id);
-      console.log(`💬 [${phoneOrUsername}] Rule Replied: "${matchedRule.response}"`);
-      return;
+    try {
+      const chat = await msg.getChat();
+      await chat.sendSeen();
+    } catch (err) {
+      console.warn("Could not mark message as seen:", err);
     }
+    await sleep(randomDelay(minDelay, Math.max(minDelay, maxDelay)));
 
-    // ── 5. Fetch Recent Conversation History (last 10) ────
-    const recentMessages = await prisma.message.findMany({
-      where: { contactId: contact.id },
-      orderBy: { createdAt: "desc" },
-      take: 10,
-    });
+    await msg.reply(decision.reply);
 
-    // Reverse to chronological order, excluding current inbound message
-    const conversationHistory = recentMessages
-      .reverse()
-      .filter((m) => m.id !== savedInboundMessage.id)
-      .map((m) => ({
-        role: (m.direction === "INBOUND" ? "user" : "assistant") as
-          | "user"
-          | "assistant",
-        content: m.content,
-      }));
-
-    // ── 6. Branch on Contact Mode ────────────────────────
-    let replyText: string | null = null;
-    let shouldFlag = false;
-    let flagReason: string | undefined;
-
-    if (contact.mode === "TUTOR") {
-      console.log(`🎓 [${phoneOrUsername}] Generating response using Tutor Engine...`);
-      const tutorResult = await generateTutorReply({
+    await prisma.message.create({
+      data: {
         contactId: contact.id,
-        contactName: contact.displayName || undefined,
-        incomingMessage: messageBody,
-        conversationHistory,
-      });
-
-      replyText = tutorResult.reply;
-      shouldFlag = tutorResult.shouldFlag;
-      flagReason = tutorResult.reason;
-    } else {
-      console.log(`🎭 [${phoneOrUsername}] Generating response using Impersonator Engine...`);
-      const contactGroup = contact.group || "UNKNOWN";
-      const contactName =
-        contact.displayName || phoneOrUsername.replace("@c.us", "");
-
-      const personaResult = await generateReply({
-        contactId: contact.id,
-        contactName,
-        group: contactGroup as "FRIENDS" | "FAMILY" | "COLLEAGUES" | "CLIENT" | "UNKNOWN",
+        direction: "OUTBOUND",
+        content: decision.reply,
         platform: "WHATSAPP",
-        incomingMessage: messageBody,
-        conversationHistory,
-      });
+      },
+    });
+    await prisma.autoReply.create({
+      data: {
+        messageId: savedInboundMessage.id,
+        contactId: contact.id,
+        generatedReply: decision.reply,
+        wasSent: true,
+      },
+    });
+    await incrementReplyCount(contact.id);
 
-      replyText = personaResult.reply;
-      shouldFlag = personaResult.shouldFlag;
-      flagReason = personaResult.reason;
-    }
-
-    // ── 7. Handle Flagged Messages ───────────────────────
-    if (shouldFlag) {
-      console.log(
-        `🚩 [${phoneOrUsername}] Message flagged for review: ${flagReason || "Requires manual attention"}`
-      );
-
-      await prisma.autoReply.create({
-        data: {
-          messageId: savedInboundMessage.id,
-          contactId: contact.id,
-          generatedReply: replyText || "[FLAGGED — no reply sent]",
-          wasSent: false,
-        },
-      });
-
-      return;
-    }
-
-    // ── 8. Send Reply & Log Outbound Message ─────────────
-    if (replyText) {
-      try {
-        const chat = await msg.getChat();
-        await chat.sendSeen();
-      } catch (err) {
-        console.warn("Could not mark message as seen:", err);
-      }
-
-      await sleep(randomDelay(minDelay, maxDelay));
-
-      await msg.reply(replyText);
-
-      // Log outbound message to DB
-      await prisma.message.create({
-        data: {
-          contactId: contact.id,
-          direction: "OUTBOUND",
-          content: replyText,
-          platform: "WHATSAPP",
-        },
-      });
-
-      // Save AutoReply log
-      await prisma.autoReply.create({
-        data: {
-          messageId: savedInboundMessage.id,
-          contactId: contact.id,
-          generatedReply: replyText,
-          wasSent: true,
-        },
-      });
-
-      // Increment daily count in Redis
-      await incrementReplyCount(contact.id);
-
-      console.log(`💬 [${phoneOrUsername}] Sent AI Reply: "${replyText}"`);
-    }
+    const source = decision.kind === "RULE" ? `rule "${decision.keyword}"` : `${decision.engine} engine`;
+    console.log(`💬 [${phoneOrUsername}] Replied via ${source}: "${decision.reply}"`);
   } catch (error) {
     console.error("❌ Error processing incoming message:", error);
   }
