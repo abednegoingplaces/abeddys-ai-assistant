@@ -8,7 +8,6 @@ import {
   whatsappReady,
 } from "./whatsapp/whatsappClient";
 import prisma from "./lib/prisma";
-import redis from "./lib/redis";
 import { createRequireAdmin } from "./lib/auth";
 import { startKeepAlive } from "./lib/keepAlive";
 import { instagramRouter } from "./instagram/router";
@@ -160,6 +159,13 @@ const server = app.listen(PORT, async () => {
   });
 });
 
+// ─── Safety net ─────────────────────────────────────────
+// whatsapp-web.js can reject promises from inside the browser (e.g. after WhatsApp logs
+// the device out). Log them instead of letting one stray error kill the whole bot.
+process.on("unhandledRejection", (reason) => {
+  console.error("⚠️ Unhandled promise rejection (bot keeps running):", reason);
+});
+
 // ─── Graceful Shutdown ──────────────────────────────────
 
 async function gracefulShutdown(signal: string) {
@@ -179,8 +185,6 @@ async function gracefulShutdown(signal: string) {
   await prisma.$disconnect();
   console.log("🗄️ Prisma disconnected");
 
-  await redis.quit().catch(() => redis.disconnect());
-  console.log("🧠 Redis disconnected");
 
   process.exit(0);
 }

@@ -6,7 +6,7 @@
  *
  * The rule logic lives in pure functions under ./rules; this module only gathers the data
  * (settings, reply counts) and applies the rules in order. Data access is injected so the
- * whole pipeline is unit-testable without Postgres or Redis.
+ * whole pipeline is unit-testable without a database.
  */
 import {
   MIN_MESSAGE_LENGTH,
