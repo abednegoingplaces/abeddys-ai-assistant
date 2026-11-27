@@ -65,7 +65,8 @@ export type ReplyDecision =
   | { kind: "BLOCKED"; reason: string }
   | { kind: "ESCALATED"; reason: string; draft: string | null }
   | { kind: "RULE"; reply: string; keyword: string }
-  | { kind: "AI"; reply: string; engine: "PERSONA" | "TUTOR" };
+  /** alert is set when the bot answered but Abeddy should still look (meetups, favours, work…). */
+  | { kind: "AI"; reply: string; engine: "PERSONA" | "TUTOR"; alert?: string };
 
 export function findMatchingRule(content: string, rules: KeywordRule[]): KeywordRule | undefined {
   const lower = content.toLowerCase();
@@ -112,30 +113,33 @@ export async function decideReply(msg: InboundMessage, deps: PipelineDeps): Prom
         });
 
   const reply = result.reply?.trim() ?? "";
-  if (result.shouldFlag || reply === "") {
-    return {
-      kind: "ESCALATED",
-      reason: result.reason ?? (reply === "" ? "AI returned an empty reply" : "Flagged by AI engine"),
-      draft: reply === "" ? null : reply,
-    };
+  // The bot couldn't produce an answer: stay silent (message stays "delivered") and alert Abeddy.
+  if (reply === "") {
+    return { kind: "ESCALATED", reason: result.reason ?? "The bot couldn't work out a reply", draft: null };
+  }
+  // The bot answered what it safely could, but Abeddy should still look.
+  if (result.shouldFlag) {
+    return { kind: "AI", reply, engine, alert: result.reason ?? "Needs your attention" };
   }
   return { kind: "AI", reply, engine };
 }
 
-/** Text of the heads-up sent to Abeddy's own WhatsApp when a message is escalated. */
+/** Text of the alert sent to Abeddy's "Message yourself" chat. */
 export function formatEscalationNotice(params: {
   contactName: string;
   reason: string;
   content: string;
-  draft: string | null;
+  /** What the bot already replied, if it answered. */
+  replied?: string | null;
 }): string {
   const preview = params.content.length > 500 ? `${params.content.slice(0, 500)}…` : params.content;
   const lines = [
-    `🚩 Needs your reply — ${params.contactName}`,
+    `🚩 ${params.replied ? "Check this chat" : "Needs your reply"} — ${params.contactName}`,
     `Reason: ${params.reason}`,
     "",
-    `"${preview}"`,
+    `They said: "${preview}"`,
+    "",
+    params.replied ? `Bot replied: "${params.replied}"` : "Bot did not reply (it still shows as delivered).",
   ];
-  if (params.draft) lines.push("", `Suggested reply: ${params.draft}`);
   return lines.join("\n");
 }

@@ -15,15 +15,6 @@ export function shouldEscalateContactGroup(group: ContactGroup): boolean {
   return ESCALATED_GROUPS.has(group);
 }
 
-export function countWords(content: string): number {
-  const trimmed = content.trim();
-  return trimmed === "" ? 0 : trimmed.split(/\s+/).length;
-}
-
-export function isWordCountExceeded(content: string, maxWords = 50): boolean {
-  return countWords(content) > maxWords;
-}
-
 // ─── Money ───────────────────────────────────────────────
 // Whole-word / whole-phrase matches only, so "equipment" or "nipeleke" don't trip them.
 

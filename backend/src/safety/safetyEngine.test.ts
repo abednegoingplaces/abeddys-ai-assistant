@@ -132,7 +132,7 @@ describe("evaluateEscalation — per-mode rules", () => {
     expect(evaluateEscalation("explain recursion please", "UNKNOWN", "TUTOR").shouldFlag).toBe(false);
   });
 
-  it("IMPERSONATOR mode escalates long messages", () => {
-    expect(evaluateEscalation(long, "FRIENDS", "IMPERSONATOR").shouldFlag).toBe(true);
+  it("long messages pass the gate: the AI answers briefly and alerts Abeddy", () => {
+    expect(evaluateEscalation(long, "FRIENDS", "IMPERSONATOR").shouldFlag).toBe(false);
   });
 });

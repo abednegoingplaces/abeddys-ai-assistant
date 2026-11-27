@@ -19,7 +19,6 @@ import {
 import {
   isLocationInquiry,
   isMoneyRequest,
-  isWordCountExceeded,
   shouldEscalateContactGroup,
 } from "./rules/escalation";
 import type {
@@ -36,8 +35,6 @@ export interface SafetyDeps {
   getReplyCount(contactId: string): Promise<number>;
   timeZone: string;
 }
-
-export const MAX_IMPERSONATOR_WORDS = 50;
 
 // ─── Tier 1: hard safety ─────────────────────────────────
 
@@ -92,8 +89,9 @@ export function evaluateHardSafety(
  * Escalation rules, per mode:
  * - Money requests and location questions escalate in EVERY mode (a tutor contact
  *   asking for M-Pesa still needs Abeddy).
- * - The CLIENT group and the 50-word limit are impersonation rules: the bot never answers
- *   clients as Abeddy, and never answers long messages as him. New chats (UNKNOWN) are answered. Tutor mode is
+ * - The CLIENT group is an impersonation rule: the bot never answers clients as Abeddy.
+ *   New chats (UNKNOWN) are answered. Long or serious messages are answered briefly by the AI,
+ *   which also alerts Abeddy (see personaEngine flag rules). Tutor mode is
  *   assigned deliberately and openly says it's an AI, so long study questions are fine.
  */
 export function evaluateEscalation(
@@ -103,14 +101,6 @@ export function evaluateEscalation(
 ): EscalationCheckResult {
   if (mode === "IMPERSONATOR" && shouldEscalateContactGroup(group)) {
     return { shouldFlag: true, code: "GROUP", reason: `Contact group is ${group} — requires manual handling` };
-  }
-
-  if (mode === "IMPERSONATOR" && isWordCountExceeded(content, MAX_IMPERSONATOR_WORDS)) {
-    return {
-      shouldFlag: true,
-      code: "LONG_MESSAGE",
-      reason: `Long message (over ${MAX_IMPERSONATOR_WORDS} words) — needs Abeddy's attention`,
-    };
   }
 
   if (isMoneyRequest(content).isRequest) {

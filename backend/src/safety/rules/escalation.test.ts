@@ -1,9 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
-  countWords,
   isLocationInquiry,
   isMoneyRequest,
-  isWordCountExceeded,
   shouldEscalateContactGroup,
 } from "./escalation";
 
@@ -12,21 +10,6 @@ describe("shouldEscalateContactGroup", () => {
   it.each(["FRIENDS", "FAMILY", "COLLEAGUES", "UNKNOWN"] as const)("allows %s (new chats get replies)", (g) =>
     expect(shouldEscalateContactGroup(g)).toBe(false)
   );
-});
-
-describe("word count", () => {
-  const words = (n: number) => Array.from({ length: n }, (_, i) => `w${i}`).join(" ");
-
-  it("counts words across any whitespace", () => {
-    expect(countWords("  one\ttwo\n three  ")).toBe(3);
-    expect(countWords("")).toBe(0);
-    expect(countWords("   ")).toBe(0);
-  });
-
-  it("allows exactly 50 words and escalates 51", () => {
-    expect(isWordCountExceeded(words(50))).toBe(false);
-    expect(isWordCountExceeded(words(51))).toBe(true);
-  });
 });
 
 describe("isMoneyRequest", () => {
