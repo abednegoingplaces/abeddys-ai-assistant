@@ -13,6 +13,10 @@ import { startKeepAlive } from "./lib/keepAlive";
 import { instagramRouter } from "./instagram/router";
 
 import { env } from "./config/env";
+import { mirrorConsoleToFile } from "./lib/fileLog";
+
+// Everything printed also goes to logs/bot.log.
+mirrorConsoleToFile();
 
 const app = express();
 const PORT = env.PORT;

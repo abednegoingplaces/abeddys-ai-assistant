@@ -91,6 +91,7 @@ backend/
     |-- whatsapp/
     |   |-- whatsappClient.ts   Connects to WhatsApp and passes messages to handleInbound
     |   `-- filters.ts          Ignores groups, statuses and broadcasts
+    |-- neo/                    Neo, your assistant in "Message yourself": /neo commands, tools, engine
     |-- media/media.ts          Works out a file's type and size, and labels it (photo, video, voice note, sticker)
     |-- instagram/
     |   |-- router.ts           The /webhooks/instagram endpoint Meta calls
@@ -202,6 +203,32 @@ To stop the bot, press `Ctrl+C` in the terminal.
 
 ---
 
+## Neo: your personal assistant
+
+**Neo** is the bot's assistant side, just for you. Open your WhatsApp **"Message yourself"** chat and start a message with **`/neo`**:
+
+```
+/neo explain recursion with a simple example
+/neo draft a cover letter for a software internship at Safaricom
+/neo what did Kevo say today?
+/neo who messaged me in the last 3 hours?
+/neo make Cyril a friend
+/neo turn off auto-replies
+/neo status
+```
+
+- Neo answers in that same chat. Its replies start with 🤖, which only ever appears in your own chat, never in chats with other people.
+- **Only `/neo` messages are read.** Your notes to yourself and the 🚩 alerts are left alone.
+- **Photos:** put `/neo …` in the caption ("/neo what's written on this receipt?").
+- **Voice notes:** start by saying "Neo, …". The bot listens to voice notes you send yourself and acts only if it hears its name.
+- **Auto-replies to other people keep working on their own.** Neo is not used to reply to anyone.
+- **Neo only sees what the bot handled:** messages people sent you while the bot was running, and the bot's replies. Group chats and your own manual replies aren't stored.
+- Neo remembers your last 10 exchanges until the bot restarts.
+
+Code: `src/neo/` (`command.ts` spots `/neo` in your own chat, `tools.ts` is the fixed list of things Neo can do, `neoEngine.ts` talks to Gemini).
+
+---
+
 ## Running it on Windows (the easy way)
 
 Double-click **`backend\start-bot.cmd`**. You can also put a shortcut to it on your Desktop.
@@ -210,6 +237,7 @@ Double-click **`backend\start-bot.cmd`**. You can also put a shortcut to it on y
 - **Window open = bot running. Close the window = bot stopped.**
 - If the bot is already running, the script says so instead of starting a second copy. Two copies would fight over the same WhatsApp login.
 - To check the status from a browser, open <http://localhost:3001/api/status>. `"whatsapp":"connected"` means it's linked and answering.
+- Everything the window shows is also saved to `backend/logs/bot.log`.
 
 ---
 
