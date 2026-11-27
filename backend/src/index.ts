@@ -10,6 +10,7 @@ import {
 import prisma from "./lib/prisma";
 import redis from "./lib/redis";
 import { createRequireAdmin } from "./lib/auth";
+import { startKeepAlive } from "./lib/keepAlive";
 
 import { env } from "./config/env";
 
@@ -144,6 +145,8 @@ app.get("/api/qr", requireAdmin, async (_req, res) => {
 const server = app.listen(PORT, async () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
   console.log(`📋 Health check: http://localhost:${PORT}/health`);
+
+  startKeepAlive(env.KEEP_ALIVE_URL ?? env.RENDER_EXTERNAL_URL);
 
   // Ensure default Settings DB row
   await ensureDefaultSettings();

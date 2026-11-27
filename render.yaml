@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: abeddy-bot
+    runtime: docker
+    plan: free
+    region: virginia
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TZ
+        value: Africa/Nairobi
+      - key: GEMINI_MODEL
+        value: gemini-3.5-flash
+      - key: ADMIN_TOKEN
+        generateValue: true
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: abeddy-bot-redis
+          property: connectionString
+      - key: DATABASE_URL
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+
+  - type: keyvalue
+    name: abeddy-bot-redis
+    plan: free
+    region: virginia
+    maxmemoryPolicy: noeviction
+    ipAllowList: []

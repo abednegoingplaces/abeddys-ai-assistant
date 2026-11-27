@@ -11,13 +11,29 @@ import { shouldIgnoreChat } from "./filters";
 
 // ─── Client Setup ────────────────────────────────────────
 
+const LOW_MEMORY_ARGS = [
+  "--disable-gpu",
+  "--no-zygote",
+  "--single-process",
+  "--disable-extensions",
+  "--disable-background-networking",
+  "--disable-default-apps",
+  "--mute-audio",
+  "--no-first-run",
+  "--renderer-process-limit=1",
+  "--js-flags=--max-old-space-size=192",
+];
+
 const client = new Client({
   authStrategy: new LocalAuth({ dataPath: "./sessions" }),
   puppeteer: {
+    // PUPPETEER_EXECUTABLE_PATH (set in the Dockerfile) points at the system Chromium.
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
       "--disable-dev-shm-usage",
+      ...(env.CHROMIUM_LOW_MEMORY ? LOW_MEMORY_ARGS : []),
     ],
   },
   userAgent:

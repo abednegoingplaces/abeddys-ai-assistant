@@ -30,6 +30,11 @@ export const envSchema = z.object({
   DASHBOARD_ORIGIN: optionalString(z.string().url()),
   // Owner's own WhatsApp id (e.g. 2547XXXXXXXX@c.us) for escalations.
   OWNER_WID: optionalString(z.string()),
+  // Public URL to ping so free hosts don't sleep. Render sets RENDER_EXTERNAL_URL automatically.
+  KEEP_ALIVE_URL: optionalString(z.string().url()),
+  RENDER_EXTERNAL_URL: optionalString(z.string().url()),
+  // Extra Chromium flags for small (512 MB) containers.
+  CHROMIUM_LOW_MEMORY: z.preprocess((v) => v === "true" || v === "1", z.boolean()).default(false),
   // Timezone used for blackout hours and daily limit resets.
   TZ: z.string().default("Africa/Nairobi"),
 }).superRefine((val, ctx) => {
