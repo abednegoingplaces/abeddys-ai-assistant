@@ -4,7 +4,7 @@ A personal auto-reply bot for WhatsApp, with Instagram planned. It answers simpl
 
 ![CI](https://github.com/abednegoingplaces/abeddys-ai-assistant/actions/workflows/ci.yml/badge.svg)
 
-**Built with:** Node.js + TypeScript, whatsapp-web.js, Google Gemini (persona), Claude with Gemini fallback (tutor), PostgreSQL (Neon) via Prisma, Redis, and Railway for hosting.
+**Built with:** Node.js + TypeScript, whatsapp-web.js, Google Gemini (persona), Claude with Gemini fallback (tutor), PostgreSQL (Neon) via Prisma, Redis, and Render (free plan) for hosting.
 
 ---
 
@@ -165,15 +165,32 @@ All of these run from the `backend` folder.
 
 ---
 
-## Deploying (Railway)
+## Deploying for free (Render)
 
-1. Create a Railway project from this repository and set the **root directory** to `backend`.
-2. Add a PostgreSQL database (or use Neon) and a Redis instance.
-3. Set these variables: `DATABASE_URL`, `REDIS_URL`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `ADMIN_TOKEN`, `NODE_ENV=production`, `TZ=Africa/Nairobi` and, optionally, `OWNER_WID`.
-4. Build command `npm run build`, start command `npm start`.
-5. Open `https://<your-app>/api/qr?token=<ADMIN_TOKEN>` once to link WhatsApp. After it's linked, that page returns 404.
+The repo includes a `render.yaml` Blueprint. It creates two things on Render's **free** plan, with no card needed:
 
----
+- **abeddy-bot:** the bot, built from `backend/Dockerfile`, with Chromium included.
+- **abeddy-bot-redis:** a free Key Value (Redis) instance for the daily reply counts.
+
+**Free-plan limits to know about:**
+
+- **Waking up:** a free service sleeps after 15 minutes without web traffic. The bot pings its own `/health` page every 10 minutes to stay awake.
+- **Shared hours:** all free services in a Render workspace share **750 hours a month**. A bot running 24/7 uses about 744 of them. If other free services in the same workspace also get traffic, Render can pause *all* of them until the next month.
+- **No saved WhatsApp login:** the disk is wiped on every restart or deploy, so you **rescan the QR code after each one**.
+- **Memory:** 512 MB is tight for Chromium. If the logs show "out of memory" restarts, the bot needs a bigger host.
+
+### Steps
+
+1. In Render: **New → Blueprint**, sign in with GitHub, and pick this repository.
+2. When Render asks for values, paste:
+   - `DATABASE_URL`: your Neon connection string
+   - `GEMINI_API_KEY`: from <https://aistudio.google.com/apikey>
+3. Click **Apply** and wait for the first deploy to say **Live**.
+4. Open the **abeddy-bot** service → **Environment** and copy the generated `ADMIN_TOKEN`.
+5. Open `https://<your-service>.onrender.com/api/qr?token=<ADMIN_TOKEN>` and scan the QR code with WhatsApp (**Settings → Linked devices → Link a device**).
+6. Check the **Logs** tab for `✅ WhatsApp client is ready!`.
+
+**Only run the bot in one place at a time.** If it runs on Render, don't also run `npm run dev` on your PC.
 
 ## Troubleshooting
 
@@ -186,7 +203,8 @@ All of these run from the `backend` folder.
 | Bot ignores "k" or a lone emoji | Messages under 2 characters are blocked on purpose; "hi", "ok", "yo" and "gn" do get replies. |
 | `/api/qr` returns 401 | Add `?token=<ADMIN_TOKEN>`, or open it from the same computer in development. |
 | `/api/qr` returns 404 | WhatsApp is already linked. |
-| QR keeps reappearing / logged out | Delete the `backend/sessions` folder, restart, and scan again. |
+| QR keeps reappearing / logged out | Locally: delete the `backend/sessions` folder, restart, and scan again. On Render: this is expected after every restart or deploy, so rescan at `/api/qr?token=…`. |
+| Render logs show the service restarting with memory errors | The 512 MB free instance is too small for Chromium at that moment. Redeploy, or move to a host with more RAM. |
 | Chromium / Puppeteer fails to launch | Run `npx puppeteer browsers install chrome` in `backend`, then start again. |
 | `npx` or `npm` is not recognised | Install Node.js and reopen the terminal. |
 
