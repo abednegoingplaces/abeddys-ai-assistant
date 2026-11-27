@@ -8,10 +8,8 @@ import {
 } from "./escalation";
 
 describe("shouldEscalateContactGroup", () => {
-  it.each(["CLIENT", "UNKNOWN"] as const)("escalates %s", (g) =>
-    expect(shouldEscalateContactGroup(g)).toBe(true)
-  );
-  it.each(["FRIENDS", "FAMILY", "COLLEAGUES"] as const)("allows %s", (g) =>
+  it("escalates CLIENT", () => expect(shouldEscalateContactGroup("CLIENT")).toBe(true));
+  it.each(["FRIENDS", "FAMILY", "COLLEAGUES", "UNKNOWN"] as const)("allows %s (new chats get replies)", (g) =>
     expect(shouldEscalateContactGroup(g)).toBe(false)
   );
 });

@@ -92,8 +92,8 @@ export function evaluateHardSafety(
  * Escalation rules, per mode:
  * - Money requests and location questions escalate in EVERY mode (a tutor contact
  *   asking for M-Pesa still needs Abeddy).
- * - Group (CLIENT/UNKNOWN) and the 50-word limit are impersonation rules: the bot must
- *   not pretend to be Abeddy to strangers or answer long messages as him. Tutor mode is
+ * - The CLIENT group and the 50-word limit are impersonation rules: the bot never answers
+ *   clients as Abeddy, and never answers long messages as him. New chats (UNKNOWN) are answered. Tutor mode is
  *   assigned deliberately and openly says it's an AI, so long study questions are fine.
  */
 export function evaluateEscalation(

@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { z } from "zod";
 import { env } from "../config/env";
+import { withGeminiFallback } from "./geminiModels";
 import type { ContactGroup as Group, Platform } from "../safety/types";
 
 // ─── Types ───────────────────────────────────────────────
@@ -58,6 +59,32 @@ export function parsePersonaOutput(raw: string): GenerateReplyResult {
     return { reply: null, shouldFlag: true, reason: "AI returned an empty reply" };
   }
   return { reply, shouldFlag: parsed.data.shouldFlag, reason: parsed.data.reason };
+}
+
+// ─── Conversation history ────────────────────────────────
+
+type Turn = { role: "user" | "assistant"; content: string };
+
+/**
+ * Prepares past messages so the model answers only the newest one:
+ * - drops the bot's own replies at the start: Gemini requires history to begin with the
+ *   other person's message (the last-10-messages window can start mid-conversation);
+ * - drops unanswered messages at the end (e.g. sent while the kill switch was on);
+ *   otherwise an old "Hi" plus a new "Hi" made the model reply "HiHi";
+ * - merges back-to-back messages from the same side into one turn.
+ */
+export function buildChatHistory(history: Turn[]): Turn[] {
+  const trimmed = [...history];
+  while (trimmed.length > 0 && trimmed[0].role === "assistant") trimmed.shift();
+  while (trimmed.length > 0 && trimmed[trimmed.length - 1].role === "user") trimmed.pop();
+
+  const merged: Turn[] = [];
+  for (const turn of trimmed) {
+    const last = merged[merged.length - 1];
+    if (last && last.role === turn.role) last.content = `${last.content}\n${turn.content}`;
+    else merged.push({ ...turn });
+  }
+  return merged;
 }
 
 // ─── System Prompt Builder ───────────────────────────────
@@ -119,7 +146,7 @@ FLAG RULES — return {"shouldFlag": true, "reply": null} for:
 - Rude or aggressive messages
 - Location questions ("uko wapi" / "where are you")
 - Money requests (keywords: ganji, doooh, okolea, niwai, nitakurefund, mpesa) — UNLESS the sender is OFFERING money
-- Client or Unknown contacts (always flag, never reply)
+- Client contacts (always flag, never reply)
 `.trim();
 
   const forbidden = `
@@ -162,18 +189,29 @@ Keep it brief and clear.
 `.trim();
       break;
 
-    case "CLIENT":
     case "UNKNOWN":
-      // These groups should be flagged before reaching the API call,
-      // but we include a prompt just in case.
       tonePreamble = `
-TONE: This is a CLIENT or UNKNOWN contact.
-DO NOT reply. Return shouldFlag: true and reply: null immediately.
+TONE: This is a NEW CHAT: someone Abeddy hasn't classified yet. You don't know them.
+- Be polite, warm and neutral. Match their language (English, Kiswahili or Sheng) but keep it clean.
+- No nicknames (no mzee, gasia, takataka, malaya), no roasting, no inside jokes.
+- Don't assume you know them or share anything personal.
+- If they say who they are or what they want and it needs Abeddy (work, business, meeting, favour), reply briefly and set shouldFlag to true.
+`.trim();
+      break;
+
+    case "CLIENT":
+      // Clients are escalated by the safety gate before this engine runs.
+      tonePreamble = `
+TONE: This is a CLIENT. DO NOT reply. Return shouldFlag: true and reply: null.
 `.trim();
       break;
   }
 
   const responseFormat = `
+CONVERSATION:
+- Earlier messages are background only. Reply ONLY to the newest message.
+- Never repeat, merge or re-answer earlier messages.
+
 RESPONSE FORMAT:
 You must respond with ONLY a valid JSON object. No markdown, no code fences, no extra text.
 The JSON must have this exact shape:
@@ -206,8 +244,8 @@ export async function generateReply(
 ): Promise<GenerateReplyResult> {
   const { group, platform, incomingMessage, conversationHistory } = params;
 
-  // Defence in depth: the safety gate already escalates these, but never impersonate to them.
-  if (group === "CLIENT" || group === "UNKNOWN") {
+  // Defence in depth: the safety gate already escalates clients, but never impersonate to them.
+  if (group === "CLIENT") {
     return { reply: null, shouldFlag: true, reason: `Contact group is ${group} — requires manual handling` };
   }
 
@@ -222,21 +260,21 @@ export async function generateReply(
 
   try {
     const genAI = new GoogleGenerativeAI(env.GEMINI_API_KEY || "");
-    const model = genAI.getGenerativeModel({
-      model: env.GEMINI_MODEL,
-      systemInstruction: systemPrompt,
-      generationConfig: { responseMimeType: "application/json" },
-    });
+    const history = buildChatHistory(messages.slice(0, -1)).map((m) => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: m.content }],
+    }));
 
-    const chat = model.startChat({
-      history: messages.slice(0, -1).map((m) => ({
-        role: m.role === "assistant" ? "model" : "user",
-        parts: [{ text: m.content }],
-      })),
+    const rawOutput = await withGeminiFallback(async (modelName) => {
+      const model = genAI.getGenerativeModel({
+        model: modelName,
+        systemInstruction: systemPrompt,
+        generationConfig: { responseMimeType: "application/json" },
+      });
+      const result = await model.startChat({ history }).sendMessage(incomingMessage);
+      return result.response.text();
     });
-
-    const result = await chat.sendMessage(incomingMessage);
-    return parsePersonaOutput(result.response.text());
+    return parsePersonaOutput(rawOutput);
   } catch (error) {
     console.error("❌ Gemini API error:", error);
     return {

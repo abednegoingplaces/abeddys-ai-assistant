@@ -93,8 +93,16 @@ describe("checkMessageSafety — tier 1 blocks", () => {
 });
 
 describe("checkMessageSafety — tier 3 escalation", () => {
-  it.each(["CLIENT", "UNKNOWN"] as const)("escalates %s contacts in impersonator mode", async (group) => {
-    expect((await engine()(input({ group }))).action).toBe("ESCALATE");
+  it("escalates CLIENT contacts in impersonator mode", async () => {
+    expect((await engine()(input({ group: "CLIENT" }))).action).toBe("ESCALATE");
+  });
+
+  it("answers new chats (UNKNOWN contacts)", async () => {
+    expect((await engine()(input({ group: "UNKNOWN" }))).action).toBe("PROCEED");
+  });
+
+  it("still escalates money requests from new chats", async () => {
+    expect((await engine()(input({ group: "UNKNOWN", content: "nitumie ganji" }))).action).toBe("ESCALATE");
   });
 
   it("escalates money requests", async () => {

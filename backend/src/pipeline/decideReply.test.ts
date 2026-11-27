@@ -45,18 +45,18 @@ describe("decideReply — ordering", () => {
   it("a CLIENT message matching a keyword rule is escalated, not auto-answered", async () => {
     const d = deps();
     const r = await decideReply(msg({ group: "CLIENT", content: "what's the price?" }), d);
-    expect(r).toMatchObject({ kind: "ESCALATED", draft: null, notifyOwner: true });
+    expect(r).toMatchObject({ kind: "ESCALATED", draft: null });
     expect(d.getActiveRules).not.toHaveBeenCalled();
   });
 
-  it("an UNKNOWN contact is escalated quietly (no owner ping) when only the group fired", async () => {
+  it("a new chat (UNKNOWN) gets an AI reply", async () => {
     const r = await decideReply(msg({ group: "UNKNOWN", content: "habari yako" }), deps());
-    expect(r).toMatchObject({ kind: "ESCALATED", notifyOwner: false });
+    expect(r).toMatchObject({ kind: "AI", engine: "PERSONA" });
   });
 
-  it("an UNKNOWN contact asking for money in TUTOR mode still pings the owner", async () => {
-    const r = await decideReply(msg({ group: "UNKNOWN", mode: "TUTOR", content: "nisendie mpesa" }), deps());
-    expect(r).toMatchObject({ kind: "ESCALATED", notifyOwner: true });
+  it("a new chat asking for money is still escalated", async () => {
+    const r = await decideReply(msg({ group: "UNKNOWN", content: "nisendie mpesa" }), deps());
+    expect(r).toMatchObject({ kind: "ESCALATED" });
   });
 
   it("a money request matching a keyword rule is escalated", async () => {
@@ -102,14 +102,13 @@ describe("decideReply — AI engines", () => {
       kind: "ESCALATED",
       reason: "Meetup request",
       draft: "wazii",
-      notifyOwner: true,
     });
   });
 
   it("never sends an empty AI reply", async () => {
     const d = deps({ generateTutorReply: vi.fn(async () => ({ reply: "   ", shouldFlag: false })) });
     const r = await decideReply(msg({ mode: "TUTOR" }), d);
-    expect(r).toEqual({ kind: "ESCALATED", reason: "AI returned an empty reply", draft: null, notifyOwner: true });
+    expect(r).toEqual({ kind: "ESCALATED", reason: "AI returned an empty reply", draft: null });
   });
 });
 

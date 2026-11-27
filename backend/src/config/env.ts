@@ -21,7 +21,9 @@ export const envSchema = z.object({
   // Reserved: the persona engine moves from Gemini to Claude after the SDK upgrade (Phase 0 follow-up).
   PERSONA_MODEL: z.string().min(1).default("claude-opus-5-5"),
   TUTOR_MODEL: z.string().min(1).default("claude-opus-5-5"),
-  GEMINI_MODEL: z.string().min(1).default("gemini-3.8-flash"),
+  GEMINI_MODEL: z.string().min(1).default("gemini-3.5-flash"),
+  // Tried in order when GEMINI_MODEL hits its daily free limit or is overloaded.
+  GEMINI_FALLBACK_MODELS: z.string().default("gemini-3.5-flash-lite,gemini-3.1-flash-lite"),
 
   // Protects /api/qr (and later /api/admin). Required outside development.
   ADMIN_TOKEN: optionalString(z.string().min(24, "ADMIN_TOKEN must be at least 24 characters")),

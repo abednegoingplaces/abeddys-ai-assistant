@@ -1,6 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { env } from "../config/env";
+import { withGeminiFallback } from "./geminiModels";
+import { buildChatHistory } from "./personaEngine";
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -90,20 +92,16 @@ export async function generateTutorReply(
   if (geminiApiKey) {
     try {
       const genAI = new GoogleGenerativeAI(geminiApiKey);
-      const model = genAI.getGenerativeModel({
-        model: env.GEMINI_MODEL,
-        systemInstruction: TUTOR_SYSTEM_PROMPT,
-      });
+      const history = buildChatHistory(conversationHistory).map((m) => ({
+        role: m.role === "assistant" ? "model" : "user",
+        parts: [{ text: m.content }],
+      }));
 
-      const chat = model.startChat({
-        history: conversationHistory.map((m) => ({
-          role: m.role === "assistant" ? "model" : "user",
-          parts: [{ text: m.content }],
-        })),
+      const replyText = await withGeminiFallback(async (modelName) => {
+        const model = genAI.getGenerativeModel({ model: modelName, systemInstruction: TUTOR_SYSTEM_PROMPT });
+        const result = await model.startChat({ history }).sendMessage(incomingMessage);
+        return result.response.text().trim();
       });
-
-      const result = await chat.sendMessage(incomingMessage);
-      const replyText = result.response.text().trim();
 
       return {
         reply: replyText,

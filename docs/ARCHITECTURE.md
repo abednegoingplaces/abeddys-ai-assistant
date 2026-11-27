@@ -32,7 +32,8 @@ The decision pipeline (`src/pipeline/decideReply.ts`) runs for both WhatsApp and
 
      | Rule | IMPERSONATOR | TUTOR |
      | --- | --- | --- |
-     | CLIENT / UNKNOWN group | escalate | allowed (tutor mode is assigned on purpose) |
+     | CLIENT group | escalate | allowed (tutor mode is assigned on purpose) |
+| UNKNOWN group (new chats) | answered, polite neutral tone | allowed |
      | Over 50 words | escalate | allowed (study questions can be long) |
      | Money request (not an offer) | escalate | escalate |
      | Location question | escalate | escalate |
@@ -47,7 +48,6 @@ The decision pipeline (`src/pipeline/decideReply.ts`) runs for both WhatsApp and
 **Escalations:**
 - They are recorded as `AutoReply { wasSent: false }`.
 - When `OWNER_WID` is set, a summary goes to the owner's own WhatsApp: contact, reason, message and any suggested reply.
-- The exception is a message escalated *only* because the contact is still `UNKNOWN`. It is logged without a ping, so unclassified numbers (spam, OTPs, businesses) don't bury real alerts.
 - The handler ignores `fromMe` messages, so these notices never loop.
 
 **Module layout:**

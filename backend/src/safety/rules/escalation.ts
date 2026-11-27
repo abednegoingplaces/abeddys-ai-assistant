@@ -5,8 +5,11 @@
  */
 import type { ContactGroup } from "../types";
 
-/** Groups the bot never impersonates Abeddy to. */
-const ESCALATED_GROUPS: ReadonlySet<ContactGroup> = new Set<ContactGroup>(["CLIENT", "UNKNOWN"]);
+/**
+ * Groups the bot never replies to as Abeddy. Only clients: their messages are business.
+ * New chats (UNKNOWN) do get replies, in a polite neutral tone (see personaEngine).
+ */
+const ESCALATED_GROUPS: ReadonlySet<ContactGroup> = new Set<ContactGroup>(["CLIENT"]);
 
 export function shouldEscalateContactGroup(group: ContactGroup): boolean {
   return ESCALATED_GROUPS.has(group);

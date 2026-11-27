@@ -14,7 +14,7 @@ A personal auto-reply bot for **WhatsApp** and **Instagram DMs**. It answers sim
 | Web server | **Express** | Serves `/health`, the WhatsApp QR page and the Instagram webhook |
 | WhatsApp | **whatsapp-web.js** (runs WhatsApp Web in headless Chromium) | Works with a normal personal WhatsApp account |
 | Instagram | **Instagram API with Instagram Login** (Meta, official) | The safe, allowed way to read and answer DMs |
-| AI replies | **Google Gemini** (persona); **Claude**, with Gemini as fallback (tutor) | Short replies in Abeddy's voice, and patient explanations |
+| AI replies | **Google Gemini** (persona); **Claude**, with Gemini as fallback (tutor) | Short replies in Abeddy's voice, and patient explanations. If one Gemini model hits its free daily limit, the next one in `GEMINI_FALLBACK_MODELS` is used |
 | Database | **PostgreSQL** on **Neon**, through **Prisma** | Stores contacts, messages, rules and settings, and counts today's replies for the daily limit |
 | Validation | **Zod** | Checks the `.env` settings and the AI's JSON output |
 | Tests | **Vitest** | Unit tests for every safety rule and the decision pipeline |
@@ -35,7 +35,7 @@ Instagram DM ------+     (save to DB)                   +--> ESCALATED : stay si
 
 1. **Safety gate** (`safety/`). This runs first, for every message.
    - **Block silently:** the kill switch is on, it's blackout hours (default 01:00-06:00 Nairobi time), the daily reply limit is reached, the message contains a link, or it's a single character or emoji.
-   - **Escalate to Abeddy:** money requests (unless someone is *sending* money) and location questions. In Impersonator mode, also **Client** or **Unknown** contacts and messages over 50 words.
+   - **Escalate to Abeddy:** money requests (unless someone is *sending* money) and location questions. In Impersonator mode, also **Client** contacts and messages over 50 words.
    - **Fails closed:** if the database is down, the bot stays silent.
 2. **Keyword rules.** Fixed replies you define in the `Rule` table.
 3. **AI reply** (`ai/`), depending on the contact's mode:
@@ -45,9 +45,8 @@ Instagram DM ------+     (save to DB)                   +--> ESCALATED : stay si
 **Escalated messages:**
 - They are logged and never answered.
 - If `OWNER_WID` is set, you also get a WhatsApp alert with the sender, the reason, the text and any suggested reply.
-- No alert is sent when the *only* reason was that the contact is still `UNKNOWN`. That keeps the alerts from becoming spam.
 
-> **New contacts start as `UNKNOWN`, so the bot stays silent with them until you give them a group** (Friends, Family or Colleagues). See [Managing contacts](#managing-contacts).
+> **New chats get replies too.** New contacts start as `UNKNOWN` and get a polite, neutral tone (no nicknames). Give someone a group (Friends, Family or Colleagues) for your usual style, or `CLIENT` to keep the bot out of that chat. See [Managing contacts](#managing-contacts).
 
 The full design, with the reasoning behind each rule, is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
@@ -190,6 +189,17 @@ To stop the bot, press `Ctrl+C` in the terminal.
 
 ---
 
+## Running it on Windows (the easy way)
+
+Double-click **`backend\start-bot.cmd`**. You can also put a shortcut to it on your Desktop.
+
+- A black window opens and shows the bot's live log: every reply, block or escalation.
+- **Window open = bot running. Close the window = bot stopped.**
+- If the bot is already running, the script says so instead of starting a second copy. Two copies would fight over the same WhatsApp login.
+- To check the status from a browser, open <http://localhost:3001/api/status>. `"whatsapp":"connected"` means it's linked and answering.
+
+---
+
 ## Managing contacts
 
 Contacts, keyword rules and settings live in the database. The easiest way to edit them is Prisma Studio:
@@ -200,7 +210,7 @@ npx prisma studio
 
 It opens in your browser. Then:
 
-- **Contact → group:** set `FRIENDS`, `FAMILY` or `COLLEAGUES` for people the bot may reply to as you. Leave clients as `CLIENT`.
+- **Contact → group:** `FRIENDS`, `FAMILY` or `COLLEAGUES` get your usual style; new chats stay `UNKNOWN` (polite, neutral replies); set `CLIENT` for anyone the bot must never answer.
 - **Contact → mode:** `IMPERSONATOR` (replies as you) or `TUTOR` (an AI study helper that says it's an AI).
 - **Rule:** add a `keyword` and a fixed `response`. Higher `priority` wins.
 - **Settings (id 1):** `killSwitch`, blackout hours, `dailyReplyLimit`, and the min/max reply delay in seconds.
@@ -287,7 +297,7 @@ The repo includes a `render.yaml` Blueprint. It creates the bot on Render's **fr
 | --- | --- |
 | `Invalid environment configuration` on start | A required `.env` value is missing or wrong. The message names it. In production, `ADMIN_TOKEN` must be at least 24 characters. |
 | `Can't reach database server` | Postgres isn't running, or `DATABASE_URL` is wrong. |
-| Bot never replies to anyone | New contacts are `UNKNOWN`, so set their group in Prisma Studio. Also check `killSwitch`, blackout hours and the terminal's 🚫 / 🚩 log lines, which say why a message was skipped. |
+| Bot never replies to anyone | Check `killSwitch`, blackout hours and the terminal's 🚫 / 🚩 log lines, which say why a message was skipped. Contacts marked `CLIENT` never get replies. |
 | Bot ignores "k" or a lone emoji | Messages under 2 characters are blocked on purpose; "hi", "ok", "yo" and "gn" do get replies. |
 | `/api/qr` returns 401 | Add `?token=<ADMIN_TOKEN>`, or open it from the same computer in development. |
 | `/api/qr` returns 404 | WhatsApp is already linked. |

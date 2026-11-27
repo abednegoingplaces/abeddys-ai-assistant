@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { generateReply, parsePersonaOutput } from "./personaEngine";
+import { buildChatHistory, generateReply, parsePersonaOutput } from "./personaEngine";
 
 describe("parsePersonaOutput", () => {
   it("accepts a normal reply", () => {
@@ -39,8 +39,58 @@ describe("parsePersonaOutput", () => {
   });
 });
 
+describe("buildChatHistory", () => {
+  it("drops unanswered messages at the end (the old Hi + new Hi = HiHi bug)", () => {
+    expect(buildChatHistory([{ role: "user", content: "Hi" }])).toEqual([]);
+    expect(
+      buildChatHistory([
+        { role: "user", content: "yo" },
+        { role: "assistant", content: "semaje" },
+        { role: "user", content: "uko?" },
+      ])
+    ).toEqual([
+      { role: "user", content: "yo" },
+      { role: "assistant", content: "semaje" },
+    ]);
+  });
+
+  it("starts with the other person's message (Gemini rejects history starting with the bot)", () => {
+    expect(
+      buildChatHistory([
+        { role: "assistant", content: "poa tu" },
+        { role: "assistant", content: "wazii" },
+        { role: "user", content: "kulikua aje" },
+        { role: "assistant", content: "acha tu" },
+      ])
+    ).toEqual([
+      { role: "user", content: "kulikua aje" },
+      { role: "assistant", content: "acha tu" },
+    ]);
+    expect(buildChatHistory([{ role: "assistant", content: "only me" }])).toEqual([]);
+  });
+
+  it("merges back-to-back messages from the same side", () => {
+    expect(
+      buildChatHistory([
+        { role: "user", content: "mzee" },
+        { role: "user", content: "uko sawa" },
+        { role: "assistant", content: "poa" },
+      ])
+    ).toEqual([
+      { role: "user", content: "mzee\nuko sawa" },
+      { role: "assistant", content: "poa" },
+    ]);
+  });
+
+  it("does not modify the input", () => {
+    const input = [{ role: "user" as const, content: "a" }, { role: "user" as const, content: "b" }, { role: "assistant" as const, content: "c" }];
+    buildChatHistory(input);
+    expect(input[0].content).toBe("a");
+  });
+});
+
 describe("generateReply defence in depth", () => {
-  it.each(["CLIENT", "UNKNOWN"] as const)("never calls the model for %s contacts", async (group) => {
+  it.each(["CLIENT"] as const)("never calls the model for %s contacts", async (group) => {
     const r = await generateReply({
       contactId: "c1",
       contactName: "x",
