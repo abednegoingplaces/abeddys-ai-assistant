@@ -1,6 +1,6 @@
 # Abeddy's AI Assistant 🤖
 
-A personal auto-reply bot for **WhatsApp** and **Instagram DMs**. It answers simple, everyday messages in Abeddy's own voice (English, Kiswahili and Sheng), and passes anything sensitive to him instead of replying.
+A personal auto-reply bot for **WhatsApp** and **Instagram DMs**. It answers simple, everyday messages in Abeddy's own voice (English, Kiswahili and Sheng). It also understands **photos, videos, voice notes and stickers**, and passes anything sensitive to Abeddy instead of replying.
 
 ![CI](https://github.com/abednegoingplaces/abeddys-ai-assistant/actions/workflows/ci.yml/badge.svg)
 
@@ -14,7 +14,7 @@ A personal auto-reply bot for **WhatsApp** and **Instagram DMs**. It answers sim
 | Web server | **Express** | Serves `/health`, the WhatsApp QR page and the Instagram webhook |
 | WhatsApp | **whatsapp-web.js** (runs WhatsApp Web in headless Chromium) | Works with a normal personal WhatsApp account |
 | Instagram | **Instagram API with Instagram Login** (Meta, official) | The safe, allowed way to read and answer DMs |
-| AI replies | **Google Gemini** (persona); **Claude**, with Gemini as fallback (tutor) | Short replies in Abeddy's voice, and patient explanations. If one Gemini model hits its free daily limit, the next one in `GEMINI_FALLBACK_MODELS` is used |
+| AI replies | **Google Gemini** (persona, and anything with photos, videos or voice notes); **Claude**, with Gemini as fallback (tutor) | Short replies in Abeddy's voice, and patient explanations. If one Gemini model hits its free daily limit, the next one in `GEMINI_FALLBACK_MODELS` is used |
 | Database | **PostgreSQL** on **Neon**, through **Prisma** | Stores contacts, messages, rules and settings, and counts today's replies for the daily limit |
 | Validation | **Zod** | Checks the `.env` settings and the AI's JSON output |
 | Tests | **Vitest** | Unit tests for every safety rule and the decision pipeline |
@@ -41,6 +41,12 @@ Instagram DM ------+     (save to DB)                   +--> ESCALATED : stay si
 3. **AI reply** (`ai/`), depending on the contact's mode:
    - **Impersonator:** short replies in Abeddy's voice.
    - **Tutor:** an AI study helper that says it's an AI.
+
+**Photos, videos, voice notes and stickers** (`media/`):
+- The bot downloads the file and gives it to Gemini together with any caption, so the reply is about what was actually sent: it laughs at memes, answers what was said in a voice note, and compliments a photo.
+- The database and the safety rules see a short label plus the caption, e.g. `[photo] nimeweza?`.
+- If the media needs Abeddy (a money request, a document, work), it's held for him like any other message.
+- Files over 14 MB are answered from the caption only. Documents and PDFs are ignored.
 
 **Escalated messages:**
 - They are logged and never answered.
@@ -79,6 +85,7 @@ backend/
     |-- whatsapp/
     |   |-- whatsappClient.ts   Connects to WhatsApp and passes messages to handleInbound
     |   `-- filters.ts          Ignores groups, statuses and broadcasts
+    |-- media/media.ts          Works out a file's type and size, and labels it (photo, video, voice note, sticker)
     |-- instagram/
     |   |-- router.ts           The /webhooks/instagram endpoint Meta calls
     |   |-- webhook.ts          Checks Meta's signature and pulls the text DMs out

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildChatHistory, generateReply, parsePersonaOutput } from "./personaEngine";
+import { buildChatHistory, generateReply, messageParts, parsePersonaOutput } from "./personaEngine";
 
 describe("parsePersonaOutput", () => {
   it("accepts a normal reply", () => {
@@ -36,6 +36,19 @@ describe("parsePersonaOutput", () => {
 
   it("flags an unflagged empty reply", () => {
     expect(parsePersonaOutput('{"reply":"  ","shouldFlag":false}')).toMatchObject({ shouldFlag: true, reply: null });
+  });
+});
+
+describe("messageParts", () => {
+  it("sends plain text when there is no media", () => {
+    expect(messageParts("sema")).toBe("sema");
+  });
+
+  it("sends the file first, then the text", () => {
+    expect(messageParts("[photo] nice?", { kind: "image", mimeType: "image/jpeg", base64: "AAAA" })).toEqual([
+      { inlineData: { mimeType: "image/jpeg", data: "AAAA" } },
+      { text: "[photo] nice?" },
+    ]);
   });
 });
 

@@ -6,7 +6,8 @@ import express, { Router } from "express";
 import { env } from "../config/env";
 import { handleInbound } from "../pipeline/handleInbound";
 import { notifyOwner } from "../whatsapp/whatsappClient";
-import { fetchInstagramUsername, instagramConfigured, sendInstagramText } from "./api";
+import { fetchInstagramMedia, fetchInstagramUsername, instagramConfigured, sendInstagramText } from "./api";
+import { mediaLabel } from "../media/media";
 import { extractTextMessages, isValidSignature, verifySubscription } from "./webhook";
 
 /** Meta retries deliveries; remember recent message ids so a retry never gets a second reply. */
@@ -58,15 +59,21 @@ instagramRouter.post(
 
     for (const dm of extractTextMessages(payload, env.IG_ACCOUNT_ID)) {
       if (alreadySeen(dm.mid)) continue;
-      handleInbound(
-        {
-          platform: "INSTAGRAM",
-          senderKey: dm.senderId,
-          content: dm.text,
-          resolveDisplayName: () => fetchInstagramUsername(dm.senderId),
-        },
-        { send: (text) => sendInstagramText(dm.senderId, text), notifyOwner }
-      ).catch((err) => console.error("❌ Error processing Instagram DM:", err));
+      (async () => {
+        const media = dm.attachment ? await fetchInstagramMedia(dm.attachment) : undefined;
+        const kind = media?.kind ?? (dm.attachment?.type === "audio" ? "audio" : dm.attachment?.type);
+        const content = kind ? mediaLabel(kind, dm.text) : dm.text;
+        await handleInbound(
+          {
+            platform: "INSTAGRAM",
+            senderKey: dm.senderId,
+            content,
+            media,
+            resolveDisplayName: () => fetchInstagramUsername(dm.senderId),
+          },
+          { send: (text) => sendInstagramText(dm.senderId, text), notifyOwner }
+        );
+      })().catch((err) => console.error("❌ Error processing Instagram DM:", err));
     }
   }
 );

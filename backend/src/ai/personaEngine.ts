@@ -2,6 +2,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { z } from "zod";
 import { env } from "../config/env";
 import { withGeminiFallback } from "./geminiModels";
+import type { InboundMedia } from "../media/media";
 import type { ContactGroup as Group, Platform } from "../safety/types";
 
 // ─── Types ───────────────────────────────────────────────
@@ -15,6 +16,8 @@ export interface GenerateReplyParams {
   platform: Platform;
   incomingMessage: string;
   conversationHistory: { role: "user" | "assistant"; content: string }[];
+  /** Photo, video, voice note or sticker that came with the message. */
+  media?: InboundMedia;
 }
 
 export interface GenerateReplyResult {
@@ -59,6 +62,14 @@ export function parsePersonaOutput(raw: string): GenerateReplyResult {
     return { reply: null, shouldFlag: true, reason: "AI returned an empty reply" };
   }
   return { reply, shouldFlag: parsed.data.shouldFlag, reason: parsed.data.reason };
+}
+
+// ─── Message parts (text + optional media) ───────────────
+
+/** What we send Gemini for the newest message: the file (if any) followed by the text. */
+export function messageParts(text: string, media?: InboundMedia) {
+  if (!media) return text;
+  return [{ inlineData: { mimeType: media.mimeType, data: media.base64 } }, { text }];
 }
 
 // ─── Conversation history ────────────────────────────────
@@ -208,6 +219,14 @@ TONE: This is a CLIENT. DO NOT reply. Return shouldFlag: true and reply: null.
   }
 
   const responseFormat = `
+PHOTOS, VIDEOS, VOICE NOTES AND STICKERS:
+- If a photo, video, voice note or sticker is attached, look at it, watch it or listen to it, and reply to what's actually in it, like a person would.
+- The text may start with a label like "[photo]" or "[voice note]"; that only says what was attached. Never mention the label.
+- Memes / funny videos → react with energy (😂). A photo of them or their things → a short compliment. A sticker → a short emoji or one word back.
+- Voice notes → reply to what they said, in the language they used.
+- If the media shows something that needs Abeddy (a money request, M-Pesa screenshot asking for money, a document or form, work, a meeting, anything serious) → reply null and set shouldFlag to true.
+- If you can't make out the media, reply naturally without guessing details.
+
 CONVERSATION:
 - Earlier messages are background only. Reply ONLY to the newest message.
 - Never repeat, merge or re-answer earlier messages.
@@ -271,7 +290,7 @@ export async function generateReply(
         systemInstruction: systemPrompt,
         generationConfig: { responseMimeType: "application/json" },
       });
-      const result = await model.startChat({ history }).sendMessage(incomingMessage);
+      const result = await model.startChat({ history }).sendMessage(messageParts(incomingMessage, params.media));
       return result.response.text();
     });
     return parsePersonaOutput(rawOutput);

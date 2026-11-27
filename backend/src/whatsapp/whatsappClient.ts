@@ -1,6 +1,14 @@
 import { Client, LocalAuth, Message } from "whatsapp-web.js";
 import qrcode from "qrcode-terminal";
 import { handleInbound } from "../pipeline/handleInbound";
+import {
+  MAX_MEDIA_BYTES,
+  decodedSize,
+  mediaKindFor,
+  mediaLabel,
+  normalizeMimeType,
+  type InboundMedia,
+} from "../media/media";
 import { env } from "../config/env";
 import { shouldIgnoreChat } from "./filters";
 
@@ -104,16 +112,44 @@ export async function notifyOwner(text: string): Promise<void> {
   }
 }
 
+/**
+ * Turns a WhatsApp message into text + optional media. Photos, videos, voice notes and
+ * stickers are downloaded so the AI can see or hear them. Files that are too big are
+ * described by their label only. Documents and other attachments are ignored.
+ */
+async function readMessage(msg: Message): Promise<{ content: string; media?: InboundMedia }> {
+  const caption = msg.body ?? "";
+  if (!msg.hasMedia) return { content: caption.trim() };
+
+  try {
+    const file = await msg.downloadMedia();
+    const kind = file ? mediaKindFor(file.mimetype, msg.type === "sticker") : null;
+    if (!file || !kind) return { content: caption.trim() };
+
+    const content = mediaLabel(kind, caption);
+    if (decodedSize(file.data) > MAX_MEDIA_BYTES) {
+      console.log(`📎 ${kind} from ${msg.from} is too big to view; replying from the caption only`);
+      return { content };
+    }
+    return { content, media: { kind, mimeType: normalizeMimeType(file.mimetype), base64: file.data } };
+  } catch (err) {
+    console.warn("Could not download media:", err instanceof Error ? err.message : err);
+    return { content: caption.trim() };
+  }
+}
+
 client.on("message", async (msg: Message) => {
   try {
     // Groups, status updates and broadcasts are never answered.
     if (shouldIgnoreChat(msg.from)) return;
     // Our own messages (including escalation notices to OWNER_WID) are ignored.
     if (msg.fromMe) return;
-    if (!msg.body || msg.body.trim().length === 0) return;
+
+    const { content, media } = await readMessage(msg);
+    if (!content) return;
 
     await handleInbound(
-      { platform: "WHATSAPP", senderKey: msg.from, content: msg.body },
+      { platform: "WHATSAPP", senderKey: msg.from, content, media },
       {
         send: async (text) => {
           await msg.reply(text);
