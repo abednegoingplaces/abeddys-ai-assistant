@@ -21,7 +21,7 @@ Every incoming message goes through the same pipeline, in this order:
    - **Impersonator:** short replies in Abeddy's voice, matching the sender's language.
    - **Tutor:** patient explanations that are open about being an AI.
 
-Escalated messages are logged and never answered. If you set `OWNER_WID`, you also get a WhatsApp message with the sender, the reason, the text and any suggested reply.
+Escalated messages are logged and never answered. If you set `OWNER_WID`, you also get a WhatsApp message with the sender, the reason, the text and any suggested reply. To avoid spamming you, messages that were escalated only because the contact is still `UNKNOWN` are logged without a ping.
 
 > **New contacts start as `UNKNOWN`, so the bot stays silent with them until you give them a group** (Friends, Family or Colleagues). See [Managing contacts](#managing-contacts).
 
@@ -183,7 +183,7 @@ All of these run from the `backend` folder.
 | `Redis connection error` / `ECONNREFUSED 6379` | Redis isn't running. Start Docker Desktop and run `docker compose up -d` from the project folder. The bot stays silent until Redis is back. |
 | `Can't reach database server` | Postgres isn't running, or `DATABASE_URL` is wrong. |
 | Bot never replies to anyone | New contacts are `UNKNOWN`, so set their group in Prisma Studio. Also check `killSwitch`, blackout hours and the terminal's 🚫 / 🚩 log lines, which say why a message was skipped. |
-| Bot ignores "hi" or "ok" | Messages under 3 characters are blocked on purpose. |
+| Bot ignores "hi" or "ok" | The safety gate blocks messages under 3 characters, so very short greetings get no reply. |
 | `/api/qr` returns 401 | Add `?token=<ADMIN_TOKEN>`, or open it from the same computer in development. |
 | `/api/qr` returns 404 | WhatsApp is already linked. |
 | QR keeps reappearing / logged out | Delete the `backend/sessions` folder, restart, and scan again. |

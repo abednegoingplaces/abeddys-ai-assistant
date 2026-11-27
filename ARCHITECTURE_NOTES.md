@@ -192,6 +192,7 @@ The gaps in section 4 are closed. Sections 2 and 3 describe the **old** order. T
 **Escalations:**
 - They are recorded as `AutoReply { wasSent: false }`.
 - When `OWNER_WID` is set, a summary goes to the owner's own WhatsApp: contact, reason, message and any suggested reply.
+- The exception is a message escalated *only* because the contact is still `UNKNOWN`. It is logged without a ping, so unclassified numbers (spam, OTPs, businesses) don't bury real alerts.
 - The handler ignores `fromMe` messages, so these notices never loop.
 
 **Module layout:**

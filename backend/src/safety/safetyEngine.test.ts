@@ -98,7 +98,7 @@ describe("checkMessageSafety — tier 3 escalation", () => {
 
   it("escalates money requests", async () => {
     const v = await engine()(input({ content: "bro niwai ganji kidogo" }));
-    expect(v).toEqual({ action: "ESCALATE", reason: "Money request detected — needs Abeddy's decision" });
+    expect(v).toEqual({ action: "ESCALATE", code: "MONEY", reason: "Money request detected — needs Abeddy's decision" });
   });
 
   it("lets money offers through", async () => {
