@@ -70,6 +70,9 @@ function visibleLength(content: string): number {
   return Array.from(content.trim()).length;
 }
 
-export function isMessageTooShort(content: string, minLength = 3): boolean {
+/** Two characters is enough for "hi", "ok", "yo", "gn"; single letters and lone emoji are noise. */
+export const MIN_MESSAGE_LENGTH = 2;
+
+export function isMessageTooShort(content: string, minLength = MIN_MESSAGE_LENGTH): boolean {
   return visibleLength(content) < minLength;
 }

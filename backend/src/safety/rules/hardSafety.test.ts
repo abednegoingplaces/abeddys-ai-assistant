@@ -116,14 +116,15 @@ describe("isMessageTooShort", () => {
     ["", true],
     ["   ", true],
     ["k", true],
-    ["ok", true],
-    ["  ok  ", true],
     ["👍", true],
+    ["ok", false],
+    ["hi", false],
+    ["  gn  ", false],
     ["yoo", false],
     ["sema", false],
   ])("%j → %s", (msg, expected) => expect(isMessageTooShort(msg)).toBe(expected));
 
   it("respects a custom minimum", () => {
-    expect(isMessageTooShort("hi", 2)).toBe(false);
+    expect(isMessageTooShort("hi", 3)).toBe(true);
   });
 });
